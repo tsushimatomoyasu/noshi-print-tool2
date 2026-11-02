@@ -550,7 +550,7 @@
           <div class="slider-pill-wrap" id="wrapBoxWidth">
             <div id="fillBoxWidth" class="slider-pill-fill"></div>
             <div class="slider-pill-text"><span>箱幅ガイド</span><span id="boxWidthVal" class="pill-val">OFF</span></div>
-            <input type="range" id="boxWidth" class="slider-pill-input" min="0" max="300" value="0" step="5">
+            <input type="range" id="boxWidth" class="slider-pill-input" min="0" max="300" value="0" step="1">
           </div>
         </div>
         <div style="margin-bottom: 5px;">
@@ -611,7 +611,7 @@
   <dialog id="numInputDialog">
     <div id="numInputTitle" style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #111;">数値を入力</div>
     <div style="margin-bottom: 16px;">
-      <input type="number" id="dialogNumberField" style="width: 100%; font-size: 20px; font-weight: bold; padding: 6px 10px; border: 1.5px solid #2563eb; border-radius: 6px; text-align: center;">
+      <input type="number" id="dialogNumberField" enterkeyhint="done" style="width: 100%; font-size: 20px; font-weight: bold; padding: 6px 10px; border: 1.5px solid #2563eb; border-radius: 6px; text-align: center;">
       <div id="numInputHint" style="font-size: 11px; color: #64748b; margin-top: 5px; text-align: center;"></div>
     </div>
     <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
@@ -967,26 +967,50 @@
       }
     }
 
+    // 「名前(ふりがな)」をルビにする。
+    // ふりがなをスペースで区切ると、直前の名前の語（スペース区切り）と後ろから順に対応させる。
+    //   山田 太郎(やまだ たろう) → 山田←やまだ / 太郎←たろう
+    //   山田 太郎(たろう)        → 太郎←たろう
+    //   山田太郎(やまだ たろう)  → 山田太郎←やまだ たろう（名前側に区切りがない場合は最後の語にまとめて付ける）
     function parseRubyText(text) {
-      const regex = /([^\s()（）]+)[\(（]([^\s()（）]+)[\)）]/g;
+      const regex = /[\(（]([^()（）]+)[\)）]/g;
       let lastIndex = 0, match;
-      let frag = document.createDocumentFragment();
-      
-      while ((match = regex.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-          frag.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
-        }
+      const frag = document.createDocumentFragment();
+      const addText = s => { if (s) frag.appendChild(document.createTextNode(s)); };
+      const addRuby = (base, reading) => {
         const ruby = document.createElement('ruby');
         const rt = document.createElement('rt');
-        ruby.appendChild(document.createTextNode(match[1])); 
-        rt.textContent = match[2]; 
-        ruby.appendChild(rt); 
+        ruby.appendChild(document.createTextNode(base));
+        rt.textContent = reading;
+        ruby.appendChild(rt);
         frag.appendChild(ruby);
+      };
+
+      while ((match = regex.exec(text)) !== null) {
+        const base = text.substring(lastIndex, match.index);
+        const readings = match[1].trim().split(/\s+/).filter(Boolean);
+        const words = [...base.matchAll(/\S+/g)]; // 名前側の語と位置
+
+        if (words.length === 0 || readings.length === 0) {
+          // 名前がない・ふりがなが空の場合はそのまま文字として出す
+          addText(text.substring(lastIndex, regex.lastIndex));
+        } else {
+          // 対応させる語数（名前側が足りなければ最後の1語にまとめて付ける）
+          const pairs = readings.length <= words.length ? readings.length : 1;
+          const rubyReadings = pairs === readings.length ? readings : [readings.join(' ')];
+          const first = words.length - pairs;
+          let pos = 0; // 最初のルビ対象語より前（ルビなしの語や空白）は、最初の addText でまとめて出る
+          words.forEach((w, i) => {
+            if (i < first) return;
+            addText(base.substring(pos, w.index));
+            addRuby(w[0], rubyReadings[i - first]);
+            pos = w.index + w[0].length;
+          });
+          // 名前と「(」の間の空白は出さない（縦書きの末尾に余計な空きができるため）
+        }
         lastIndex = regex.lastIndex;
       }
-      if (lastIndex < text.length) {
-        frag.appendChild(document.createTextNode(text.substring(lastIndex)));
-      }
+      addText(text.substring(lastIndex));
       return frag;
     }
 
@@ -1436,6 +1460,14 @@
     
     document.getElementById('numInputCancel').addEventListener('click', () => document.getElementById('numInputDialog').close());
     
+    // Enterキー（スマホのキーボードの「完了」も含む）で決定
+    dialogNumberField.addEventListener('keydown', e => {
+      if ((e.key === 'Enter' || e.keyCode === 13) && !e.isComposing) {
+        e.preventDefault();
+        document.getElementById('numInputOk').click();
+      }
+    });
+    
     document.getElementById('numInputOk').addEventListener('click', () => {
       if (!activeDialogConfig) return; 
       let v = parseFloat(dialogNumberField.value);
@@ -1462,7 +1494,7 @@
         onUpdate: v => { b2SizeVal.textContent = v == 15 ? '標準:15mm' : v + 'mm'; document.documentElement.style.setProperty('--b2-size', v); updateFill(b2Size, fillB2Size); saveSettings(); } },
       { wrap: wrapBottomPos, slider: bottomPos, fill: fillBottomPos, title: '下段 開始高さ', min: 108, max: 160, step: 1, def: 115, unit: 'mm',
         onUpdate: v => { bottomPosVal.textContent = v == 115 ? '標準:115mm' : v + 'mm'; document.documentElement.style.setProperty('--bottom-pos', v); updateFill(bottomPos, fillBottomPos); saveSettings(); } },
-      { wrap: wrapBoxWidth, slider: boxWidth, fill: fillBoxWidth, title: '箱の横幅ガイド', min: 0, max: 300, step: 1, def: 0, unit: 'mm',
+      { wrap: wrapBoxWidth, slider: boxWidth, fill: fillBoxWidth, title: '箱の横幅ガイド', min: 0, max: 300, step: 1, dragStep: 5, def: 0, unit: 'mm',
         onUpdate: v => { updateBoxGuide(); updateFill(boxWidth, fillBoxWidth); saveSettings(); } },
       { wrap: wrapLsTop, slider: lsTop, fill: fillLsTop, title: '表書き 字間', min: 0, max: 0.5, step: 0.01, def: 0.15, unit: 'em',
         onUpdate: v => { lsTopVal.textContent = Math.abs(v - 0.15)<0.005 ? '標準:0.15em' : `${v.toFixed(2)}em`; document.documentElement.style.setProperty('--ls-top', `${v}em`); updateFill(lsTop, fillLsTop); saveSettings(); } },
@@ -1678,7 +1710,30 @@
 
     sliderConfigs.forEach(cfg => {
       const s = cfg.slider;
-      s.addEventListener('input', e => cfg.onUpdate(parseFloat(e.target.value)));
+      s.addEventListener('input', e => {
+        let v = parseFloat(e.target.value);
+        // ドラッグ時だけ dragStep 単位に丸める（数値入力・プリセットでは1mm単位を保つため、部品自体の刻みは細かくしてある）
+        if (cfg.dragStep) {
+          const st = cfg.dragStep;
+          const prev = cfg.lastValue !== undefined ? cfg.lastValue : v;
+          if (cfg.byKey && Math.abs(v - prev) < st) {
+            // 矢印キーの1刻み移動は、動かした方向の次の刻みへ進める（ドラッグ時は手ぶれで数値が揺れないよう四捨五入のみ）
+            v = v > prev ? Math.ceil(v / st) * st : v < prev ? Math.floor(v / st) * st : prev;
+          } else {
+            v = Math.round(v / st) * st;
+          }
+          v = Math.min(Math.max(v, cfg.min), cfg.max);
+          s.value = v;
+        }
+        cfg.lastValue = v;
+        cfg.onUpdate(v);
+      });
+      // 操作開始時点の値を記録（数値入力・プリセット・リセットで変わった値を反映するため）
+      ['keydown', 'pointerdown', 'touchstart'].forEach(ev =>
+        s.addEventListener(ev, () => {
+          cfg.lastValue = parseFloat(s.value);
+          cfg.byKey = ev === 'keydown';
+        }, { passive: true }));
       
       let lt = 0;
       s.parentElement.addEventListener('touchend', e => { 
