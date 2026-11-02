@@ -241,6 +241,12 @@
     /* PDFダウンロードボタン */
     .btn-print { width: 100%; padding: 11px; margin-top: 10px; background: #1a73e8; color: #ffffff; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
     .btn-print:active { background: #1557b0; }
+    .btn-print:disabled { background: #7aa7e8; cursor: wait; }
+
+    /* はみ出し警告（お知らせのみ。印刷は止めない） */
+    .overflow-marks { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+    .overflow-mark { position: absolute; border: 1.5px solid #dc2626; background: rgba(220, 38, 38, 0.08); border-radius: 2px; }
+    .overflow-warning { display: none; max-width: 440px; margin: 5px auto 0 auto; padding: 4px 9px; background: #fee2e2; border-left: 3px solid #dc2626; border-radius: 4px; font-size: 11px; line-height: 1.4; color: #7f1d1d; }
 
     /* 最下部フッター周り */
     .panel-footer-wrap { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
@@ -295,7 +301,7 @@
         print-color-adjust: exact !important; 
       }
       
-      .controls-container, .btn-print, dialog, .margin-guide, .box-guide, .mizuhiki-watermark { 
+      .controls-container, .btn-print, dialog, .margin-guide, .box-guide, .mizuhiki-watermark, .overflow-marks, .overflow-warning { 
         display: none !important; 
       }
       
@@ -384,8 +390,10 @@
             <div id="line2Text" class="col-line-2 align-bottom"></div>
           </div>
         </div>
+        <div id="overflowMarks" class="overflow-marks"></div>
       </div>
     </div>
+    <div id="overflowWarning" class="overflow-warning"></div>
   </div>
 
   <!-- 操作パネル -->
@@ -518,7 +526,7 @@
         </div>
       </div>
 
-      <button type="button" class="btn-print" onclick="window.print()">印刷する（PDF保存）</button>
+      <button type="button" id="printBtn" class="btn-print">印刷する（PDF保存）</button>
       
       <div class="panel-footer-wrap">
         <button type="button" id="resetBtn" class="btn-reset">初期値に戻す</button>
@@ -585,23 +593,31 @@
     <div style="font-weight: bold; font-size: 16px; margin-bottom: 12px; color: #111;">💡 のし紙印刷ツールの使い方</div>
     <div class="help-section">
       <h4>1. 表書き（上段）の選び方</h4>
-      <p>入力欄をタップすると、「御祝」や「内祝」などのよく使う表書きメニューが開き、選択するだけでマナー解説も表示されます。自分で直接文字を入力したいときは右側の「✏️」ボタンを押してください。</p>
+      <p>入力欄をタップすると、「御祝」や「内祝」などのよく使う表書きメニューが開き、選択するだけでマナー解説も表示されます。自分で直接文字を入力したいときは右側の「✏️」ボタンを押してください。<br>「御霊前」を選ぶと薄墨が自動でONになります。その他の弔事の表書きは濃い墨のままなので、必要に応じて「薄墨」にチェックを入れてください。</p>
     </div>
     <div class="help-section">
       <h4>2. ふりがな（ルビ）や連名の入れ方</h4>
-      <p>下段の名前欄に「山田 太郎」「花子(はなこ)」のようにカッコ書きでふりがなを入れると自動でルビになります。改行すると連名になります。</p>
+      <p>名前のあとにカッコ書きでふりがなを入れると、自動でルビになります。改行すると連名になります。<br>・「花子(はなこ)」→ 花子に「はなこ」<br>・「山田 太郎(やまだ たろう)」→ 山田に「やまだ」、太郎に「たろう」（スペースで区切ると、名前の区切りと後ろから順に対応します）<br>・「山田 太郎(たろう)」→ 太郎だけに「たろう」</p>
     </div>
     <div class="help-section">
       <h4>3. スライダー操作のコツ</h4>
-      <p>・<strong>ダブルタップ</strong>: スライダーを素早く2回タップすると標準値に戻ります。<br>・<strong>長押し</strong>: スライダーを長押しすると、正確な数値を直接入力できるダイアログが開きます。</p>
+      <p>・<strong>ダブルタップ</strong>: スライダーを素早く2回タップすると標準値に戻ります。<br>・<strong>長押し</strong>: スライダーを長押しすると、正確な数値を直接入力できるダイアログが開きます。入力後は「決定」ボタンのほか、Enterキー（スマホは「完了」）でも決定できます。</p>
     </div>
     <div class="help-section">
-      <h4>4. 箱幅プリセットの上書き保存</h4>
-      <p>詳細設定の「箱幅ガイド」でスライダーを好きな幅に合わせた後、「小」「中」「大」のボタンを長押しすると確認画面が表示され、現在設定しているサイズをそのボタンに上書き登録できます。</p>
+      <h4>4. 箱幅ガイドとプリセットの上書き保存</h4>
+      <p>詳細設定の「箱幅ガイド」は、スライダーでは5mm刻み、長押しの数値入力では1mm単位で合わせられます。好きな幅に合わせた後、「小」「中」「大」のボタンを長押しすると確認画面が表示され、現在のサイズをそのボタンに上書き登録できます。</p>
     </div>
     <div class="help-section">
       <h4>5. 印刷設定（余白・ズレ・縦横回転）</h4>
       <p>「印刷設定を開く」ボタンから、文字切れを防ぐための「余白ガイド」の調整、印刷時の「左右ズレ補正」、PDFを縦向き（90度回転）で出力する設定が可能です。</p>
+    </div>
+    <div class="help-section">
+      <h4>6. はみ出し警告</h4>
+      <p>文字が余白ガイドの範囲（印刷設定の上下・左右余白）からはみ出すと、プレビューのその文字が赤枠で囲まれ、下に注意が表示されます。これはお知らせのみで、<strong>警告が出ていても印刷はできます</strong>。赤枠や注意は印刷されません。</p>
+    </div>
+    <div class="help-section">
+      <h4>7. 印刷するとき</h4>
+      <p>「印刷する」を押すと、書体の読み込みを待ってから印刷画面が開きます（「書体を読み込み中…」と表示されることがあります）。入力内容や設定はこの端末のブラウザに自動で保存され、次回もそのまま使えます。保存できない環境では、操作パネルの上部に注意が表示されます。</p>
     </div>
     <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
       <button type="button" id="helpCloseBtn" style="background: #1a73e8; border: none; color: #fff; font-size: 13px; font-weight: bold; padding: 6px 18px; border-radius: 20px; cursor: pointer;">閉じる</button>
@@ -1154,7 +1170,112 @@
       }
     }
     
-    const saveSettings = () => loadAndSave(true);
+    // 設定変更のたびに保存し、はみ出しチェックも行う
+    const saveSettings = () => { loadAndSave(true); scheduleOverflowCheck(); };
+
+    // ----- はみ出し警告（お知らせのみ。印刷は止めない） -----
+    const overflowMarks = document.getElementById('overflowMarks');
+    const overflowWarning = document.getElementById('overflowWarning');
+    const OVERFLOW_TOLERANCE_MM = 0.8; // 書体差・ルビの誤差で誤警告しないための余裕
+    let overflowTimer = null;
+
+    function scheduleOverflowCheck() {
+      cancelAnimationFrame(overflowTimer);
+      overflowTimer = requestAnimationFrame(() => requestAnimationFrame(checkOverflow));
+    }
+
+    // 要素内の文字の実際の範囲（字間の末尾の空きは除く）を求める
+    function getTextBounds(el) {
+      if (!el || el.offsetParent === null) return null;
+      let box = null;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const range = document.createRange();
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent.trim()) continue;
+        const ls = parseFloat(getComputedStyle(node.parentElement).letterSpacing) || 0;
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.width === 0 && r.height === 0) continue;
+          const b = { left: r.left, right: r.right, top: r.top, bottom: r.bottom - ls };
+          box = box ? { left: Math.min(box.left, b.left), right: Math.max(box.right, b.right), top: Math.min(box.top, b.top), bottom: Math.max(box.bottom, b.bottom) } : b;
+        }
+      }
+      return box;
+    }
+
+    function checkOverflow() {
+      const sheet = sheetFrame.getBoundingClientRect();
+      if (!sheet.width) return;
+      const pxPerMm = sheet.width / currentPaperWidthMm;
+      const tol = OVERFLOW_TOLERANCE_MM * pxPerMm;
+      const limit = {
+        left: sheet.left + safetyMarginLR * pxPerMm - tol,
+        right: sheet.right - safetyMarginLR * pxPerMm + tol,
+        top: sheet.top + safetyMarginTB * pxPerMm - tol,
+        bottom: sheet.bottom - safetyMarginTB * pxPerMm + tol,
+      };
+      const parts = [
+        { label: '表書き', el: topText },
+        { label: '下段1行目', el: line1Text },
+        ...[...line2Text.querySelectorAll('.name-col')].map(el => ({ label: '氏名', el })),
+      ];
+      overflowMarks.innerHTML = '';
+      const hit = [];
+      parts.forEach(({ label, el }) => {
+        const b = getTextBounds(el);
+        if (!b) return;
+        if (b.left < limit.left || b.right > limit.right || b.top < limit.top || b.bottom > limit.bottom) {
+          if (!hit.includes(label)) hit.push(label);
+          const m = document.createElement('div');
+          m.className = 'overflow-mark';
+          m.style.left = (b.left - sheet.left - 2) + 'px';
+          m.style.top = (b.top - sheet.top - 2) + 'px';
+          m.style.width = (b.right - b.left + 4) + 'px';
+          m.style.height = (b.bottom - b.top + 4) + 'px';
+          overflowMarks.appendChild(m);
+        }
+      });
+      if (hit.length) {
+        const area = (safetyMarginTB > 0 || safetyMarginLR > 0) ? `印刷範囲（余白 上下${safetyMarginTB}mm・左右${safetyMarginLR}mm）` : '用紙';
+        overflowWarning.textContent = `⚠️ ${hit.join('・')}が${area}からはみ出しています（赤枠）。このままでも印刷はできます。`;
+        overflowWarning.style.display = 'block';
+      } else {
+        overflowWarning.style.display = 'none';
+      }
+    }
+    window.addEventListener('resize', scheduleOverflowCheck);
+    if (document.fonts) document.fonts.addEventListener('loadingdone', scheduleOverflowCheck);
+
+    // ----- 印刷：書体の読み込みを待ってから印刷画面を開く（最大5秒。間に合わなくても印刷はする） -----
+    const printBtn = document.getElementById('printBtn');
+    const FONT_FAMILIES = {
+      'font-shippori': '700 1em "Shippori Mincho"',
+      'font-mincho': '900 1em "Noto Serif JP"',
+      'font-klee': '600 1em "Klee One"',
+      'font-brush': '400 1em "Yuji Boku"',
+    };
+    printBtn.addEventListener('click', async () => {
+      const label = printBtn.textContent;
+      printBtn.disabled = true;
+      printBtn.textContent = '書体を読み込み中…';
+      try {
+        if (document.fonts) {
+          const text = printSheet.innerText || '御祝';
+          const fontSpec = FONT_FAMILIES[currentFontValue];
+          const loads = Promise.all([
+            fontSpec ? document.fonts.load(fontSpec, text) : null,
+            document.fonts.ready,
+          ]);
+          await Promise.race([loads, new Promise(r => setTimeout(r, 5000))]);
+        }
+      } catch (e) {
+        // 読み込みに失敗しても印刷は続ける
+      } finally {
+        printBtn.disabled = false;
+        printBtn.textContent = label;
+      }
+      window.print();
+    });
 
     function syncAllUI() {
       applyPaper(currentPaperValue); // includes updatePrintLayout
@@ -1206,6 +1327,7 @@
     checkStorage();
     loadAndSave(false);
     syncAllUI();
+    scheduleOverflowCheck();
 
     // UIイベントリスナー
     advancedToggleBtn.addEventListener('click', () => {
@@ -1302,7 +1424,10 @@
     });
     // ------------------------------------
     
-    helpBtn.addEventListener('click', () => helpDialog.showModal()); 
+    helpBtn.addEventListener('click', () => { 
+      helpDialog.showModal(); 
+      helpDialog.scrollTop = 0; // 「閉じる」へのフォーカスで下までスクロールされるのを戻す
+    }); 
     helpCloseBtn.addEventListener('click', () => helpDialog.close());
 
     let blockDropdownUntil = 0;
@@ -1676,6 +1801,7 @@
       lsB2.value = 0.15;
       
       syncAllUI();
+      scheduleOverflowCheck();
     });
 
     [watermarkCheck, usuzumiCheck].forEach(el => {
