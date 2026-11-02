@@ -278,11 +278,15 @@
         --mm-to-px: 3.77953 !important;
       }
       
-      html, body { 
-        margin: 0 !important; 
-        padding: 0 !important; 
-        background: #fff !important; 
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
         overflow: hidden !important;
+        /* スマホ印刷時は100vhが用紙数枚分になり2ページ目が出るため解除 */
+        min-height: 0 !important;
+        height: auto !important;
+        display: block !important;
       }
       
       body * { 
@@ -302,6 +306,9 @@
         overflow: visible !important;
       }
       
+      /* プレビュー用の比率指定(padding-top)が残ると用紙より高くなるため解除 */
+      .sheet { padding-top: 0 !important; transition: none !important; }
+
       /* 【通常時：横向き】 */
       body:not(.is-portrait) .sheet {
         position: absolute !important;
