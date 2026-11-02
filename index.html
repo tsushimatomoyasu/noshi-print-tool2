@@ -311,7 +311,7 @@
 
       /* 【通常時：横向き】 */
       body:not(.is-portrait) .sheet {
-        position: absolute !important;
+        position: fixed !important; /* fixedは印刷時にページ分割されない */
         top: 0 !important; 
         left: 0 !important;
         width: 297mm !important; 
@@ -326,7 +326,7 @@
 
       /* 【縦向き出力時：ご希望の向き（反時計回り90度）でぴったり配置】 */
       body.is-portrait .sheet {
-        position: absolute !important;
+        position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 297mm !important; 
