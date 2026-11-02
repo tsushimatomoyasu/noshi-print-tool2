@@ -1,0 +1,1672 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>のし紙印刷ツール</title>
+  
+  <!-- Google Fonts 読み込み -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Klee+One:wght@600&family=Noto+Serif+JP:wght@700;900&family=Shippori+Mincho:wght@700&family=Yuji+Boku&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      /* CSS変数による動的レイアウト管理 */
+      --paper-width: 297;
+      --paper-height: 210;
+      --mm-to-px: 1.481; /* JSで画面サイズに合わせて自動計算されます */
+      --offset-x: 0;
+      --top-size: 18;
+      --top-pos: 18;
+      --b1-size: 11;
+      --b1-offset: 0;
+      --b2-size: 15;
+      --bottom-pos: 115;
+      --ls-top: 0.15em;
+      --ls-b1: 0.15em;
+      --ls-b2: 0.15em;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* プレビュー表示枠 */
+    .preview-sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #f4f4f4;
+      padding: 8px 12px 6px 12px;
+      width: 100%;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+
+    .sheet-wrapper {
+      max-width: 440px;
+      margin: 0 auto;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .sheet {
+      position: relative;
+      width: 100%;
+      padding-top: 70.71%; /* A4比率 (210/297) JSで動的切替 */
+      background: #ffffff;
+      transition: padding-top 0.2s ease;
+    }
+
+    /* 水引ウォーターマーク（プレビュー用） */
+    .mizuhiki-watermark {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      opacity: 0.22;
+      z-index: 1;
+    }
+
+    /* ガイド線 */
+    .box-guide {
+      display: none;
+      position: absolute;
+      top: 0;
+      height: 100%;
+      transform: translateX(-50%);
+      border-left: 1.5px dashed #0284c7;
+      border-right: 1.5px dashed #0284c7;
+      pointer-events: none;
+      z-index: 3;
+      box-sizing: content-box;
+      opacity: 0.65;
+    }
+
+    .margin-guide {
+      display: none;
+      position: absolute;
+      border: 1px dashed rgba(225, 29, 72, 0.65);
+      pointer-events: none;
+      z-index: 3;
+      box-sizing: border-box;
+    }
+
+    /* 印字エリア全体 */
+    .sheet-inner {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      color: #111111;
+      z-index: 2;
+      transform: translateX(calc(var(--offset-x) * var(--mm-to-px) * 1px));
+    }
+
+    .sheet-inner.is-usuzumi, 
+    .sheet-inner.is-usuzumi * { color: #666666 !important; }
+
+    /* フォント設定 */
+    .font-shippori { font-family: 'Shippori Mincho', serif; font-weight: 700; }
+    .font-mincho   { font-family: 'Noto Serif JP', serif; font-weight: 900; }
+    .font-klee     { font-family: 'Klee One', cursive; font-weight: 600; }
+    .font-brush    { font-family: 'Yuji Boku', serif; font-weight: 400; }
+
+    /* 上段（表書き） */
+    .text-top {
+      position: absolute;
+      top: calc(var(--top-pos) / var(--paper-height) * 100%);
+      left: 50%;
+      transform: translateX(-50%);
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      font-size: calc(var(--top-size) * var(--mm-to-px) * 1px);
+      letter-spacing: var(--ls-top);
+      line-height: 1;
+      height: 38%;
+      text-align: center;
+      white-space: pre;
+    }
+
+    /* 下段コンテナ */
+    .text-bottom-container {
+      position: absolute;
+      top: calc(var(--bottom-pos) / var(--paper-height) * 100%);
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: row-reverse;
+      justify-content: center;
+      align-items: flex-start;
+      gap: calc(5 * var(--mm-to-px) * 1px);
+    }
+
+    .col-line {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      white-space: pre;
+    }
+
+    .col-line-1 {
+      font-size: calc(var(--b1-size) * var(--mm-to-px) * 1px);
+      letter-spacing: var(--ls-b1);
+      line-height: 1.3;
+      transform: translateY(calc(var(--b1-offset) * var(--mm-to-px) * -1px));
+    }
+
+    .col-line-2 {
+      display: flex;
+      flex-direction: row-reverse;
+      align-items: flex-start;
+      gap: calc(3.5 * var(--mm-to-px) * 1px);
+      font-size: calc(var(--b2-size) * var(--mm-to-px) * 1px);
+      letter-spacing: var(--ls-b2);
+      line-height: 1.4;
+    }
+
+    .name-col {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      white-space: pre;
+    }
+
+    ruby { ruby-position: over; ruby-align: center; }
+    rt { font-size: 0.45em; letter-spacing: 0.05em; font-weight: 600; color: inherit; }
+    .col-line-2.align-bottom .name-col:not(:first-child) { align-self: flex-end; }
+
+    /* 操作パネル周りのCSS */
+    .controls-container { flex: 1; padding: 6px 12px 24px 12px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .controls { background: #ffffff; padding: 10px 14px 12px 14px; border-radius: 8px; max-width: 440px; margin: 0 auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+    
+    .field-label { display: block; margin-top: 6px; font-weight: bold; font-size: 12px; color: #333; }
+    .field-sub { font-size: 10px; font-weight: normal; color: #666; }
+    .controls input[type="text"], .controls textarea { width: 100%; padding: 2px 9px; font-size: 14px; box-sizing: border-box; margin-top: 3px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font-family: inherit; }
+    .controls textarea { height: 45px; resize: vertical; line-height: 1.35; }
+    .grid-2 { display: flex; gap: 8px; margin-top: 6px; }
+    .grid-2 > div { flex: 1; }
+    .section-divider { margin: 6px 0 3px 0; border-top: 1px solid #eee; }
+    
+    .top-switches { margin-left: auto; display: flex; align-items: center; padding-bottom: 2px; }
+    .inline-checkbox-label { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 11px; font-weight: bold; color: #555; cursor: pointer; user-select: none; white-space: nowrap; }
+    .inline-checkbox-label input { cursor: pointer; accent-color: #555; margin: 0; }
+
+    /* カスタムプルダウンUI */
+    .custom-select-box { position: relative; cursor: pointer; user-select: none; }
+    .select-trigger { display: flex; justify-content: space-between; align-items: center; width: 100%; height: 28px; padding: 2px 9px; margin-top: 2px; font-size: 12px; background: #fff; border: 1px solid #ccc; border-radius: 4px; color: #333; white-space: nowrap; }
+    .select-trigger::after { content: "▼"; font-size: 9px; color: #777; margin-left: 4px; }
+    .custom-suggest-container { position: relative; flex: 1; display: flex; gap: 4px; align-items: center; }
+    .input-with-arrow { position: relative; flex: 1; }
+    .input-with-arrow::after { content: "▼"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 9px; color: #777; pointer-events: none; }
+    .input-with-arrow input { padding-right: 26px !important; cursor: pointer; height: 28px; margin-top: 0; }
+    
+    .btn-edit-toggle { width: 32px; height: 28px; margin-top: 0; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #475569; flex-shrink: 0; }
+    .btn-edit-toggle:active { background: #e2e8f0; }
+    .btn-edit-toggle.is-editing { background: #dbeafe; border-color: #3b82f6; color: #1d4ed8; }
+    
+    .custom-dropdown-panel { display: none; position: absolute; top: 100%; left: 0; width: 100%; min-width: 160px; background: #ffffff; border-radius: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); z-index: 1000; margin-top: 4px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .dropdown-list { max-height: 250px; overflow-y: auto; margin: 0; padding: 0; list-style: none; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+    .dropdown-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; cursor: pointer; font-size: 13px; color: #1e293b; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    .dropdown-item:active { background: #e2e8f0; }
+    
+    .suggest-badge { font-size: 9px; font-weight: bold; padding: 2px 7px; border-radius: 12px; white-space: nowrap; }
+    .badge-celebrate { background: #fee2e2; color: #b91c1c; }
+    .badge-wedding   { background: #fce7f3; color: #be185d; }
+    .badge-return    { background: #fef3c7; color: #b45309; }
+    .badge-thanks    { background: #ecfdf5; color: #047857; }
+    .badge-buddhist  { background: #f1f5f9; color: #475569; }
+
+    .manner-tip { display: none; margin-top: 5px; padding: 5px 9px; background: #f1f5f9; border-left: 3px solid #64748b; border-radius: 4px; font-size: 11px; line-height: 1.4; color: #334155; }
+
+    /* スライダー */
+    .slider-pill-wrap { position: relative; width: 100%; height: 20px; border-radius: 6px; overflow: hidden; background: #edf2f7; border: 1px solid #cbd5e1; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05); user-select: none; touch-action: pan-y; }
+    .slider-pill-fill { position: absolute; top: 0; left: 0; height: 100%; width: 50%; background: #c7dcfc; pointer-events: none; transition: width 0.04s ease-out; }
+    .slider-pill-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0 8px; pointer-events: none; font-size: 11px; font-weight: bold; color: #1e40af; z-index: 2; }
+    .slider-pill-text .pill-val { font-weight: 600; font-size: 11px; color: #1e3a8a; }
+    .slider-pill-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 3; margin: 0; padding: 0; }
+
+    /* PDFダウンロードボタン */
+    .btn-print { width: 100%; padding: 11px; margin-top: 10px; background: #1a73e8; color: #ffffff; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+    .btn-print:active { background: #1557b0; }
+
+    /* 最下部フッター周り */
+    .panel-footer-wrap { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
+    .footer-right-group { display: flex; gap: 12px; align-items: center; }
+    .btn-reset, .btn-help, .btn-advanced-toggle { background: none; border: none; font-size: 11px; padding: 4px 2px; cursor: pointer; }
+    .btn-reset { color: #888; text-decoration: underline; }
+    .btn-reset:hover { color: #d32f2f; }
+    .btn-help { color: #1a73e8; font-weight: bold; text-decoration: underline; }
+    .btn-advanced-toggle { color: #64748b; font-weight: bold; }
+
+    /* 詳細設定アコーディオン */
+    .advanced-drawer { display: none; margin-top: 8px; padding: 12px 10px 10px 10px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; }
+    .advanced-drawer.is-open { display: block; }
+    .advanced-section-title { font-size: 11px; font-weight: bold; color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 8px; }
+    .advanced-hint { font-size: 9px; font-weight: normal; color: #64748b; margin-left: 4px; }
+    
+    .preset-chip-row { display: flex; gap: 5px; height: 22px; margin-bottom: 5px; align-items: center; }
+    .preset-chip { flex: 1; height: 100%; display: flex; align-items: center; justify-content: center; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 10px; font-weight: bold; color: #475569; cursor: pointer; user-select: none; }
+    .preset-chip:active { background: #e2e8f0; }
+    .preset-chip.active-preset { background: #dbeafe; border-color: #3b82f6; color: #1d4ed8; }
+    
+    .margin-setting-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 2px; }
+    .btn-margin-edit { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; font-weight: bold; color: #475569; padding: 4px 10px; cursor: pointer; }
+
+    /* ダイアログ */
+    dialog { border: none; border-radius: 16px; padding: 20px; width: calc(100% - 48px); max-width: 320px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3); font-family: inherit; background: #ffffff; }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px); }
+    #helpDialog { max-width: 360px; }
+    .help-section { margin-bottom: 12px; }
+    .help-section h4 { margin: 0 0 3px 0; font-size: 13px; color: #1a73e8; }
+    .help-section p { margin: 0; font-size: 11.5px; color: #475569; line-height: 1.45; }
+
+    /* ＝＝＝＝＝ 印刷用（本番）CSS ＝＝＝＝＝ */
+    @media print {
+      :root {
+        --mm-to-px: 3.77953 !important;
+      }
+      
+      html, body { 
+        margin: 0 !important; 
+        padding: 0 !important; 
+        background: #fff !important; 
+        overflow: hidden !important;
+      }
+      
+      body * { 
+        -webkit-print-color-adjust: exact !important; 
+        print-color-adjust: exact !important; 
+      }
+      
+      .controls-container, .btn-print, dialog, .margin-guide, .box-guide, .mizuhiki-watermark { 
+        display: none !important; 
+      }
+      
+      .preview-sticky-header, .sheet-wrapper {
+        position: static !important;
+        margin: 0 !important; 
+        padding: 0 !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+      }
+      
+      /* 【通常時：横向き】 */
+      body:not(.is-portrait) .sheet {
+        position: absolute !important;
+        top: 0 !important; 
+        left: 0 !important;
+        width: 297mm !important; 
+        height: 209.5mm !important;
+        transform: none !important;
+        overflow: hidden !important;
+      }
+      body:not(.is-portrait) .sheet.is-hanshi {
+        width: 314mm !important; 
+        height: 223.5mm !important;
+      }
+
+      /* 【縦向き出力時：ご希望の向き（反時計回り90度）でぴったり配置】 */
+      body.is-portrait .sheet {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 297mm !important; 
+        height: 209.5mm !important;
+        transform-origin: 0 0 !important;
+        transform: translateY(297mm) rotate(-90deg) !important;
+        overflow: hidden !important;
+      }
+      body.is-portrait .sheet.is-hanshi {
+        width: 314mm !important; 
+        height: 223.5mm !important;
+        transform: translateY(314mm) rotate(-90deg) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- プレビュー枠 -->
+  <div class="preview-sticky-header">
+    <div class="sheet-wrapper">
+      <div id="sheetFrame" class="sheet">
+        <div id="marginGuide" class="margin-guide"></div>
+        <div id="boxGuide" class="box-guide"></div>
+
+        <svg id="mizuhikiSvg" class="mizuhiki-watermark" viewBox="0 0 297 210" preserveAspectRatio="none">
+          <g id="wmCelebration">
+            <g transform="translate(245, 16)">
+              <polygon points="12,0 24,10 24,38 12,48 0,38 0,10" fill="none" stroke="#e11d48" stroke-width="1.2" />
+              <polygon points="12,4 20,12 20,36 12,44 4,36 4,12" fill="#ffe4e6" opacity="0.6" />
+              <line x1="12" y1="8" x2="12" y2="40" stroke="#f59e0b" stroke-width="2.5" />
+            </g>
+            <line x1="0" y1="107" x2="297" y2="107" stroke="#dc2626" stroke-width="1.8" />
+            <line x1="0" y1="110" x2="297" y2="110" stroke="#fca5a5" stroke-width="1.8" />
+            <path d="M 148.5,108.5 C 130,85 110,85 125,108.5 C 135,125 145,115 148.5,108.5 Z" fill="none" stroke="#dc2626" stroke-width="1.8" />
+            <path d="M 148.5,108.5 C 167,85 187,85 172,108.5 C 162,125 152,115 148.5,108.5 Z" fill="none" stroke="#fca5a5" stroke-width="1.8" />
+            <path d="M 146,110 Q 138,135 128,145" fill="none" stroke="#dc2626" stroke-width="1.8" />
+            <path d="M 151,110 Q 159,135 169,145" fill="none" stroke="#fca5a5" stroke-width="1.8" />
+            <ellipse cx="148.5" cy="108.5" rx="5" ry="4" fill="#dc2626" />
+          </g>
+          <g id="wmBuddhist" style="display: none;">
+            <line x1="0" y1="107" x2="297" y2="107" stroke="#334155" stroke-width="1.8" />
+            <line x1="0" y1="110" x2="297" y2="110" stroke="#94a3b8" stroke-width="1.8" />
+            <path d="M 135,108.5 L 148.5,108.5 L 175,88" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" />
+            <path d="M 162,108.5 L 148.5,108.5 L 122,88" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" />
+            <ellipse cx="148.5" cy="108.5" rx="5.5" ry="4" fill="#334155" />
+          </g>
+        </svg>
+
+        <div id="printSheet" class="sheet-inner font-shippori">
+          <div id="topText" class="text-top">御祝</div>
+          <div id="bottomContainer" class="text-bottom-container">
+            <div id="line1Text" class="col-line col-line-1"></div>
+            <div id="line2Text" class="col-line-2 align-bottom"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作パネル -->
+  <div class="controls-container">
+    <div class="controls">
+      <div style="display: flex; gap: 8px; align-items: flex-end;">
+        <div style="flex: 1.15;">
+          <label class="field-label" style="margin-top: 0;">用紙</label>
+          <div class="custom-select-box" id="paperBox">
+            <div class="select-trigger" id="paperTrigger">A4横 (297×210mm)</div>
+            <div class="custom-dropdown-panel" id="paperDropdown" style="min-width: 175px;">
+              <ul class="dropdown-list">
+                <li class="dropdown-item" data-value="a4">A4横 (297×210mm)</li>
+                <li class="dropdown-item" data-value="hanshi">半紙判 (314×224mm)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div style="flex: 1.25;">
+          <label class="field-label" style="margin-top: 0;">書体</label>
+          <div class="custom-select-box" id="fontBox">
+            <div class="select-trigger" id="fontTrigger">明朝体（端正）</div>
+            <div class="custom-dropdown-panel" id="fontDropdown" style="min-width: 175px;">
+              <ul class="dropdown-list">
+                <li class="dropdown-item font-shippori" data-value="font-shippori">明朝体（端正）</li>
+                <li class="dropdown-item font-mincho" data-value="font-mincho">明朝体（極太）</li>
+                <li class="dropdown-item font-klee" data-value="font-klee">楷書体（手書き風）</li>
+                <li class="dropdown-item font-brush" data-value="font-brush">毛筆・行書調（筆文字）</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="top-switches">
+          <label class="inline-checkbox-label">水引 <input type="checkbox" id="watermarkCheck" checked></label>
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px;">
+        <label class="field-label" style="margin-top: 0; white-space: nowrap;">表書き（上段）</label>
+        <div class="custom-suggest-container">
+          <div class="input-with-arrow">
+            <input type="text" id="topInput" value="御祝" placeholder="例：御祝" readonly autocomplete="off">
+          </div>
+          <button type="button" id="editToggleBtn" class="btn-edit-toggle" title="直接自由に入力する">✏️</button>
+          <div id="suggestDropdown" class="custom-dropdown-panel" style="width: 100%;">
+            <ul class="dropdown-list">
+              <li class="dropdown-item suggest-item" data-value="御祝"><span class="suggest-text">御祝</span><span class="suggest-badge badge-celebrate">慶事・一般</span></li>
+              <li class="dropdown-item suggest-item" data-value="寿"><span class="suggest-text">寿</span><span class="suggest-badge badge-wedding">結婚祝</span></li>
+              <li class="dropdown-item suggest-item" data-value="内祝"><span class="suggest-text">内祝</span><span class="suggest-badge badge-return">お返し</span></li>
+              <li class="dropdown-item suggest-item" data-value="御礼"><span class="suggest-text">御礼</span><span class="suggest-badge badge-thanks">御礼・お礼</span></li>
+              <li class="dropdown-item suggest-item" data-value="お年賀"><span class="suggest-text">お年賀</span><span class="suggest-badge badge-celebrate">新年・ご挨拶</span></li>
+              <!--
+              <li class="dropdown-item suggest-item" data-value="お山祝い"><span class="suggest-text">お山祝い</span><span class="suggest-badge badge-celebrate">祈願・お祝い</span></li>
+              -->
+              <li class="dropdown-item suggest-item" data-value="粗品"><span class="suggest-text">粗品</span><span class="suggest-badge badge-celebrate">慶事・一般</span></li>
+              <li class="dropdown-item suggest-item" data-value="御中元"><span class="suggest-text">御中元</span><span class="suggest-badge badge-celebrate">慶事・一般</span></li>
+              <li class="dropdown-item suggest-item" data-value="御歳暮"><span class="suggest-text">御歳暮</span><span class="suggest-badge badge-celebrate">慶事・一般</span></li>
+              <li class="dropdown-item suggest-item" data-value="御仏前"><span class="suggest-text">御仏前</span><span class="suggest-badge badge-buddhist">法要・四十九日以降</span></li>
+              <li class="dropdown-item suggest-item" data-value="御霊前"><span class="suggest-text">御霊前</span><span class="suggest-badge badge-buddhist">葬儀・お通夜</span></li>
+              <li class="dropdown-item suggest-item" data-value="志"><span class="suggest-text">志</span><span class="suggest-badge badge-buddhist">香典返し・弔事</span></li>
+              <li class="dropdown-item suggest-item" data-value="粗供養"><span class="suggest-text">粗供養</span><span class="suggest-badge badge-buddhist">法要・関西地域</span></li>
+            </ul>
+          </div>
+        </div>
+        <label class="inline-checkbox-label">薄墨 <input type="checkbox" id="usuzumiCheck"></label>
+      </div>
+
+      <div id="mannerTip" class="manner-tip"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="slider-pill-wrap" id="wrapTopSize">
+            <div id="fillTopSize" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>文字サイズ</span><span id="topSizeVal" class="pill-val">標準:18mm</span></div>
+            <input type="range" id="topSize" class="slider-pill-input" min="12" max="26" value="18" step="1">
+          </div>
+        </div>
+        <div>
+          <div class="slider-pill-wrap" id="wrapTopPos">
+            <div id="fillTopPos" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>上下位置</span><span id="topPosVal" class="pill-val">標準:18mm</span></div>
+            <input type="range" id="topPos" class="slider-pill-input" min="6" max="32" value="18" step="1">
+          </div>
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <label class="field-label">下段（1行目・会社名等） <span class="field-sub">※空欄可</span></label>
+      <textarea id="b1Input" placeholder="例：株式会社〇〇&#13;&#10;千葉支店"></textarea>
+      <div class="grid-2">
+        <div>
+          <div class="slider-pill-wrap" id="wrapB1Size">
+            <div id="fillB1Size" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>サイズ</span><span id="b1SizeVal" class="pill-val">標準:11mm</span></div>
+            <input type="range" id="b1Size" class="slider-pill-input" min="7" max="18" value="11" step="1">
+          </div>
+        </div>
+        <div>
+          <div class="slider-pill-wrap" id="wrapB1Offset">
+            <div id="fillB1Offset" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>位置上げ</span><span id="b1OffsetVal" class="pill-val">標準:0mm</span></div>
+            <input type="range" id="b1Offset" class="slider-pill-input" min="0" max="40" value="0" step="1">
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <label class="field-label" style="margin-top: 0;">下段（2行目・氏名） <span class="field-sub">※改行で連名 / 名前(ふりがな)でルビ</span></label>
+        <label class="inline-checkbox-label">連名下揃え <input type="checkbox" id="bottomAlignBottomCheck" checked></label>
+      </div>
+      <textarea id="b2Input" placeholder="例：山田 太郎&#13;&#10;花子(はなこ)"></textarea>
+      <div class="grid-2">
+        <div>
+          <div class="slider-pill-wrap" id="wrapB2Size">
+            <div id="fillB2Size" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>サイズ</span><span id="b2SizeVal" class="pill-val">標準:15mm</span></div>
+            <input type="range" id="b2Size" class="slider-pill-input" min="8" max="22" value="15" step="1">
+          </div>
+        </div>
+        <div>
+          <div class="slider-pill-wrap" id="wrapBottomPos">
+            <div id="fillBottomPos" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>開始高さ</span><span id="bottomPosVal" class="pill-val">標準:115mm</span></div>
+            <input type="range" id="bottomPos" class="slider-pill-input" min="108" max="160" value="115" step="1">
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn-print" onclick="window.print()">印刷する（PDF保存）</button>
+      
+      <div class="panel-footer-wrap">
+        <button type="button" id="resetBtn" class="btn-reset">初期値に戻す</button>
+        <div class="footer-right-group">
+          <button type="button" id="helpBtn" class="btn-help">使い方 💡</button>
+          <button type="button" id="advancedToggleBtn" class="btn-advanced-toggle">詳細設定 ▾</button>
+        </div>
+      </div>
+
+      <div id="advancedDrawer" class="advanced-drawer">
+        <!-- 第1グループ：印刷設定 -->
+        <div class="advanced-section-title">🖨️ 印刷設定・環境補正</div>
+        <div class="margin-setting-row" style="margin-bottom: 12px;">
+          <label class="inline-checkbox-label">
+            <input type="checkbox" id="marginGuideCheck"> 印刷余白ガイドを表示
+          </label>
+          <button type="button" id="marginEditBtn" class="btn-margin-edit">⚙️ 印刷設定を開く</button>
+        </div>
+
+        <!-- 第2グループ：レイアウト設定 -->
+        <div class="advanced-section-title">📏 箱幅ガイド・字間調整 <span class="advanced-hint">(Wタップで標準 / 長押しで数値入力)</span></div>
+        <div class="preset-chip-row">
+          <div class="preset-chip" id="chipOff">OFF</div>
+          <div class="preset-chip" id="chipP1" data-idx="0">小:140</div>
+          <div class="preset-chip" id="chipP2" data-idx="1">中:180</div>
+          <div class="preset-chip" id="chipP3" data-idx="2">大:220</div>
+        </div>
+        <div style="margin-bottom: 8px;">
+          <div class="slider-pill-wrap" id="wrapBoxWidth">
+            <div id="fillBoxWidth" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>箱幅ガイド</span><span id="boxWidthVal" class="pill-val">OFF</span></div>
+            <input type="range" id="boxWidth" class="slider-pill-input" min="0" max="300" value="0" step="5">
+          </div>
+        </div>
+        <div style="margin-bottom: 5px;">
+          <div class="slider-pill-wrap" id="wrapLsTop">
+            <div id="fillLsTop" class="slider-pill-fill"></div>
+            <div class="slider-pill-text"><span>字間（上段・表書き）</span><span id="lsTopVal" class="pill-val">標準:0.15em</span></div>
+            <input type="range" id="lsTop" class="slider-pill-input" min="0" max="0.5" value="0.15" step="0.01">
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top: 0;">
+          <div>
+            <div class="slider-pill-wrap" id="wrapLsB2">
+              <div id="fillLsB2" class="slider-pill-fill"></div>
+              <div class="slider-pill-text"><span>字間（氏名）</span><span id="lsB2Val" class="pill-val">標準:0.15em</span></div>
+              <input type="range" id="lsB2" class="slider-pill-input" min="0" max="0.4" value="0.15" step="0.01">
+            </div>
+          </div>
+          <div>
+            <div class="slider-pill-wrap" id="wrapLsB1">
+              <div id="fillLsB1" class="slider-pill-fill"></div>
+              <div class="slider-pill-text"><span>字間（1行目）</span><span id="lsB1Val" class="pill-val">標準:0.15em</span></div>
+              <input type="range" id="lsB1" class="slider-pill-input" min="0" max="0.4" value="0.15" step="0.01">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ダイアログ群 -->
+  <dialog id="helpDialog">
+    <div style="font-weight: bold; font-size: 16px; margin-bottom: 12px; color: #111;">💡 のし紙印刷ツールの使い方</div>
+    <div class="help-section">
+      <h4>1. 表書き（上段）の選び方</h4>
+      <p>入力欄をタップすると、「御祝」や「内祝」などのよく使う表書きメニューが開き、選択するだけでマナー解説も表示されます。自分で直接文字を入力したいときは右側の「✏️」ボタンを押してください。</p>
+    </div>
+    <div class="help-section">
+      <h4>2. ふりがな（ルビ）や連名の入れ方</h4>
+      <p>下段の名前欄に「山田 太郎」「花子(はなこ)」のようにカッコ書きでふりがなを入れると自動でルビになります。改行すると連名になります。</p>
+    </div>
+    <div class="help-section">
+      <h4>3. スライダー操作のコツ</h4>
+      <p>・<strong>ダブルタップ</strong>: スライダーを素早く2回タップすると標準値に戻ります。<br>・<strong>長押し</strong>: スライダーを長押しすると、正確な数値を直接入力できるダイアログが開きます。</p>
+    </div>
+    <div class="help-section">
+      <h4>4. 箱幅プリセットの上書き保存</h4>
+      <p>詳細設定の「箱幅ガイド」でスライダーを好きな幅に合わせた後、「小」「中」「大」のボタンを長押しすると確認画面が表示され、現在設定しているサイズをそのボタンに上書き登録できます。</p>
+    </div>
+    <div class="help-section">
+      <h4>5. 印刷設定（余白・ズレ・縦横回転）</h4>
+      <p>「印刷設定を開く」ボタンから、文字切れを防ぐための「余白ガイド」の調整、印刷時の「左右ズレ補正」、PDFを縦向き（90度回転）で出力する設定が可能です。</p>
+    </div>
+    <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+      <button type="button" id="helpCloseBtn" style="background: #1a73e8; border: none; color: #fff; font-size: 13px; font-weight: bold; padding: 6px 18px; border-radius: 20px; cursor: pointer;">閉じる</button>
+    </div>
+  </dialog>
+
+  <dialog id="numInputDialog">
+    <div id="numInputTitle" style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #111;">数値を入力</div>
+    <div style="margin-bottom: 16px;">
+      <input type="number" id="dialogNumberField" style="width: 100%; font-size: 20px; font-weight: bold; padding: 6px 10px; border: 1.5px solid #2563eb; border-radius: 6px; text-align: center;">
+      <div id="numInputHint" style="font-size: 11px; color: #64748b; margin-top: 5px; text-align: center;"></div>
+    </div>
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
+      <button type="button" id="numInputCancel" style="background: none; border: none; color: #666; font-size: 14px; font-weight: bold; padding: 6px 14px; cursor: pointer;">キャンセル</button>
+      <button type="button" id="numInputOk" style="background: #1a73e8; border: none; color: #fff; font-size: 14px; font-weight: bold; padding: 6px 18px; border-radius: 20px; cursor: pointer;">決定</button>
+    </div>
+  </dialog>
+
+  <dialog id="marginInputDialog">
+    <div style="font-weight: bold; font-size: 16px; margin-bottom: 12px; color: #111;">🖨️ 印刷設定・位置補正</div>
+    
+    <div style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 6px;">■ 印刷の向き（PDF用紙設定）</div>
+    <div style="margin-bottom: 16px;">
+      <label class="inline-checkbox-label" style="font-size: 13px; color: #111;">
+        <input type="checkbox" id="portraitPrintField" style="width: 16px; height: 16px;"> PDFを縦向きに出力する（90度回転）
+      </label>
+    </div>
+
+    <div style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 6px;">■ 余白ガイド設定 <span style="font-weight: normal; color: #64748b;">(文字切れ防止用)</span></div>
+    <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+      <div style="flex: 1;">
+        <label style="display: block; font-size: 12px; font-weight: bold; color: #475569; margin-bottom: 4px; text-align: center;">上下余白 (mm)</label>
+        <input type="number" id="marginTopBottomField" min="0" max="30" step="0.5" style="width: 100%; font-size: 18px; font-weight: bold; padding: 6px 8px; border: 1.5px solid #2563eb; border-radius: 6px; text-align: center;">
+      </div>
+      <div style="flex: 1;">
+        <label style="display: block; font-size: 12px; font-weight: bold; color: #475569; margin-bottom: 4px; text-align: center;">左右余白 (mm)</label>
+        <input type="number" id="marginLeftRightField" min="0" max="30" step="0.5" style="width: 100%; font-size: 18px; font-weight: bold; padding: 6px 8px; border: 1.5px solid #2563eb; border-radius: 6px; text-align: center;">
+      </div>
+    </div>
+
+    <div style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 6px;">■ 印字の全体左右ズレ補正</div>
+    <div style="margin-bottom: 20px;">
+      <div class="slider-pill-wrap" id="wrapOffsetX">
+        <div id="fillOffsetX" class="slider-pill-fill"></div>
+        <div class="slider-pill-text"><span>補正量</span><span id="offsetXVal" class="pill-val">標準:0mm</span></div>
+        <input type="range" id="offsetX" class="slider-pill-input" min="-10" max="10" value="0" step="0.5">
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
+      <button type="button" id="marginInputCancel" style="background: none; border: none; color: #666; font-size: 14px; font-weight: bold; padding: 6px 14px; cursor: pointer;">キャンセル</button>
+      <button type="button" id="marginInputNext" style="background: #1a73e8; border: none; color: #fff; font-size: 14px; font-weight: bold; padding: 6px 18px; border-radius: 20px; cursor: pointer;">確認</button>
+    </div>
+  </dialog>
+
+  <dialog id="marginConfirmDialog">
+    <div style="font-weight: bold; font-size: 17px; margin-bottom: 10px; color: #111;">印刷設定の更新</div>
+    <div id="marginConfirmMsg" style="font-size: 13.5px; color: #475569; line-height: 1.5; margin-bottom: 20px;"></div>
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+      <button type="button" id="marginConfirmCancel" style="background: none; border: none; color: #666; font-size: 14px; font-weight: bold; padding: 6px 14px; cursor: pointer;">キャンセル</button>
+      <button type="button" id="marginConfirmOk" style="background: #1a73e8; border: none; color: #fff; font-size: 14px; font-weight: bold; padding: 6px 18px; border-radius: 20px; cursor: pointer;">変更する</button>
+    </div>
+  </dialog>
+
+  <dialog id="presetConfirmDialog">
+    <div style="font-weight: bold; font-size: 17px; margin-bottom: 10px; color: #111;">プリセットの登録</div>
+    <div id="presetConfirmMsg" style="font-size: 13.5px; color: #475569; line-height: 1.5; margin-bottom: 20px;"></div>
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+      <button type="button" id="presetConfirmCancel" style="background: none; border: none; color: #666; font-size: 14px; font-weight: bold; padding: 6px 14px; cursor: pointer;">キャンセル</button>
+      <button type="button" id="presetConfirmOk" style="background: #1a73e8; border: none; color: #fff; font-size: 14px; font-weight: bold; padding: 6px 18px; border-radius: 20px; cursor: pointer;">登録する</button>
+    </div>
+  </dialog>
+
+  <dialog id="resetDialog">
+    <div style="font-weight: bold; font-size: 18px; margin-bottom: 12px; color: #111;">設定のリセット</div>
+    <div style="font-size: 14px; color: #555; line-height: 1.55; margin-bottom: 22px;">入力内容とスライダーの設定を初期値に戻しますか？</div>
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+      <button type="button" id="dialogCancel" style="background: none; border: none; color: #666; font-size: 14px; font-weight: bold; padding: 8px 14px; cursor: pointer;">キャンセル</button>
+      <button type="button" id="dialogOk" style="background: #c62828; border: none; color: #fff; font-size: 14px; font-weight: bold; padding: 8px 18px; border-radius: 20px; cursor: pointer;">初期化</button>
+    </div>
+  </dialog>
+
+  <script>
+    // ----- DOM要素の取得 -----
+    const paperBox = document.getElementById('paperBox');
+    const paperTrigger = document.getElementById('paperTrigger');
+    const paperDropdown = document.getElementById('paperDropdown');
+    const paperItems = paperDropdown.querySelectorAll('.dropdown-item');
+    
+    const fontBox = document.getElementById('fontBox');
+    const fontTrigger = document.getElementById('fontTrigger');
+    const fontDropdown = document.getElementById('fontDropdown');
+    const fontItems = fontDropdown.querySelectorAll('.dropdown-item');
+    
+    const watermarkCheck = document.getElementById('watermarkCheck');
+    const usuzumiCheck = document.getElementById('usuzumiCheck');
+    const bottomAlignBottomCheck = document.getElementById('bottomAlignBottomCheck');
+    
+    const sheetFrame = document.getElementById('sheetFrame');
+    const mizuhikiSvg = document.getElementById('mizuhikiSvg');
+    const wmCelebration = document.getElementById('wmCelebration');
+    const wmBuddhist = document.getElementById('wmBuddhist');
+    
+    const boxGuide = document.getElementById('boxGuide');
+    const marginGuide = document.getElementById('marginGuide');
+    
+    const resetBtn = document.getElementById('resetBtn');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpDialog = document.getElementById('helpDialog');
+    const helpCloseBtn = document.getElementById('helpCloseBtn');
+    
+    const resetDialog = document.getElementById('resetDialog');
+    const dialogCancel = document.getElementById('dialogCancel');
+    const dialogOk = document.getElementById('dialogOk');
+    
+    const presetConfirmDialog = document.getElementById('presetConfirmDialog');
+    const presetConfirmMsg = document.getElementById('presetConfirmMsg');
+    const presetConfirmCancel = document.getElementById('presetConfirmCancel');
+    const presetConfirmOk = document.getElementById('presetConfirmOk');
+    
+    const marginGuideCheck = document.getElementById('marginGuideCheck');
+    const marginEditBtn = document.getElementById('marginEditBtn');
+    const marginInputDialog = document.getElementById('marginInputDialog');
+    const portraitPrintField = document.getElementById('portraitPrintField');
+    const marginTopBottomField = document.getElementById('marginTopBottomField');
+    const marginLeftRightField = document.getElementById('marginLeftRightField');
+    const marginInputCancel = document.getElementById('marginInputCancel');
+    const marginInputNext = document.getElementById('marginInputNext');
+    const marginConfirmDialog = document.getElementById('marginConfirmDialog');
+    const marginConfirmMsg = document.getElementById('marginConfirmMsg');
+    const marginConfirmCancel = document.getElementById('marginConfirmCancel');
+    const marginConfirmOk = document.getElementById('marginConfirmOk');
+
+    const advancedToggleBtn = document.getElementById('advancedToggleBtn');
+    const advancedDrawer = document.getElementById('advancedDrawer');
+    
+    const topInput = document.getElementById('topInput');
+    const editToggleBtn = document.getElementById('editToggleBtn');
+    const suggestDropdown = document.getElementById('suggestDropdown');
+    const suggestItems = suggestDropdown.querySelectorAll('.dropdown-item');
+    const mannerTip = document.getElementById('mannerTip');
+    
+    const topText = document.getElementById('topText');
+    const line1Text = document.getElementById('line1Text');
+    const line2Text = document.getElementById('line2Text');
+    const printSheet = document.getElementById('printSheet');
+    
+    const wrapTopSize = document.getElementById('wrapTopSize');
+    const topSize = document.getElementById('topSize');
+    const topSizeVal = document.getElementById('topSizeVal');
+    const fillTopSize = document.getElementById('fillTopSize');
+    
+    const wrapTopPos = document.getElementById('wrapTopPos');
+    const topPos = document.getElementById('topPos');
+    const topPosVal = document.getElementById('topPosVal');
+    const fillTopPos = document.getElementById('fillTopPos');
+    
+    const b1Input = document.getElementById('b1Input');
+    const wrapB1Size = document.getElementById('wrapB1Size');
+    const b1Size = document.getElementById('b1Size');
+    const b1SizeVal = document.getElementById('b1SizeVal');
+    const fillB1Size = document.getElementById('fillB1Size');
+    
+    const wrapB1Offset = document.getElementById('wrapB1Offset');
+    const b1Offset = document.getElementById('b1Offset');
+    const b1OffsetVal = document.getElementById('b1OffsetVal');
+    const fillB1Offset = document.getElementById('fillB1Offset');
+    
+    const b2Input = document.getElementById('b2Input');
+    const wrapB2Size = document.getElementById('wrapB2Size');
+    const b2Size = document.getElementById('b2Size');
+    const b2SizeVal = document.getElementById('b2SizeVal');
+    const fillB2Size = document.getElementById('fillB2Size');
+    
+    const wrapBottomPos = document.getElementById('wrapBottomPos');
+    const bottomPos = document.getElementById('bottomPos');
+    const bottomPosVal = document.getElementById('bottomPosVal');
+    const fillBottomPos = document.getElementById('fillBottomPos');
+    
+    const wrapOffsetX = document.getElementById('wrapOffsetX');
+    const offsetX = document.getElementById('offsetX');
+    const offsetXVal = document.getElementById('offsetXVal');
+    const fillOffsetX = document.getElementById('fillOffsetX');
+    
+    const wrapBoxWidth = document.getElementById('wrapBoxWidth');
+    const boxWidth = document.getElementById('boxWidth');
+    const boxWidthVal = document.getElementById('boxWidthVal');
+    const fillBoxWidth = document.getElementById('fillBoxWidth');
+    
+    const wrapLsTop = document.getElementById('wrapLsTop');
+    const lsTop = document.getElementById('lsTop');
+    const lsTopVal = document.getElementById('lsTopVal');
+    const fillLsTop = document.getElementById('fillLsTop');
+    
+    const wrapLsB1 = document.getElementById('wrapLsB1');
+    const lsB1 = document.getElementById('lsB1');
+    const lsB1Val = document.getElementById('lsB1Val');
+    const fillLsB1 = document.getElementById('fillLsB1');
+    
+    const wrapLsB2 = document.getElementById('wrapLsB2');
+    const lsB2 = document.getElementById('lsB2');
+    const lsB2Val = document.getElementById('lsB2Val');
+    const fillLsB2 = document.getElementById('fillLsB2');
+    
+    const chipOff = document.getElementById('chipOff');
+    const chipP1 = document.getElementById('chipP1');
+    const chipP2 = document.getElementById('chipP2');
+    const chipP3 = document.getElementById('chipP3');
+    
+    const presetChips = [chipP1, chipP2, chipP3];
+    const presetNames = ['小', '中', '大'];
+
+    // 状態管理変数
+    const STORAGE_KEY = 'noshi_tool_settings_v33'; 
+    const PRESETS_STORAGE_KEY = 'noshi_box_presets_v2';
+    const MARGIN_STORAGE_KEY = 'noshi_printer_margin_v4';
+    
+    let currentPaperValue = 'a4';
+    let currentFontValue = 'font-shippori';
+    let safetyMarginTB = 5.0;
+    let safetyMarginLR = 5.0;
+    let savedOffsetX = 0; 
+    let savedIsPortrait = false; 
+    
+    let pendingMarginTB = null;
+    let pendingMarginLR = null;
+    let pendingOffsetX = null;
+    let pendingIsPortrait = false;
+    
+    let presets = [140, 180, 220];
+    let pendingPresetIndex = null;
+    let pendingPresetVal = null;
+    
+    let currentPaperHeightMm = 210;
+    let currentPaperWidthMm = 297;
+    const DEFAULT_B2 = '山田 太郎\n花子(はなこ)';
+
+    // ----- コア処理：画面サイズに合わせてCSS変数を更新（プレビュー用） -----
+    function updateScale() {
+      const rect = sheetFrame.getBoundingClientRect();
+      const scale = rect.width / currentPaperWidthMm;
+      document.documentElement.style.setProperty('--mm-to-px', scale);
+    }
+    window.addEventListener('resize', updateScale);
+
+    function updateFill(slider, fillEl) {
+      const min = parseFloat(slider.min);
+      const max = parseFloat(slider.max);
+      const val = parseFloat(slider.value);
+      fillEl.style.width = (((val - min) / (max - min)) * 100) + '%';
+    }
+
+    const PAPER_LABELS = { 'a4': 'A4横 (297×210mm)', 'hanshi': '半紙判 (314×224mm)' };
+
+    // 縦横の動的@page書き換え関数
+    function updatePrintLayout() {
+      let styleEl = document.getElementById('dynamicPageStyle');
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'dynamicPageStyle';
+        document.head.appendChild(styleEl);
+      }
+      
+      if (savedIsPortrait) {
+        document.body.classList.add('is-portrait');
+        if (currentPaperValue === 'hanshi') {
+          styleEl.innerHTML = `@page { size: 224mm 314mm; margin: 0; }`;
+        } else {
+          styleEl.innerHTML = `@page { size: A4 portrait; margin: 0; }`;
+        }
+      } else {
+        document.body.classList.remove('is-portrait');
+        if (currentPaperValue === 'hanshi') {
+          styleEl.innerHTML = `@page { size: 314mm 224mm; margin: 0; }`;
+        } else {
+          styleEl.innerHTML = `@page { size: A4 landscape; margin: 0; }`;
+        }
+      }
+    }
+
+    function applyPaper(type) {
+      currentPaperValue = type;
+      if (type === 'hanshi') {
+        currentPaperHeightMm = 224; 
+        currentPaperWidthMm = 314;
+        sheetFrame.style.paddingTop = '71.34%';
+        sheetFrame.classList.add('is-hanshi');
+      } else {
+        currentPaperHeightMm = 210; 
+        currentPaperWidthMm = 297;
+        sheetFrame.style.paddingTop = '70.71%';
+        sheetFrame.classList.remove('is-hanshi');
+      }
+      document.documentElement.style.setProperty('--paper-width', currentPaperWidthMm);
+      document.documentElement.style.setProperty('--paper-height', currentPaperHeightMm);
+      paperTrigger.textContent = PAPER_LABELS[type] || 'A4横 (297×210mm)';
+      
+      updatePrintLayout();
+      
+      requestAnimationFrame(() => {
+        updateScale();
+        updateBoxGuide();
+        updateMarginGuide();
+      });
+    }
+
+    const BUDDHIST_TITLES = ['御仏前', '御霊前', '志', '粗供養'];
+
+    const FONT_LABELS = {
+      'font-shippori': '明朝体（端正）', 
+      'font-mincho': '明朝体（極太）', 
+      'font-klee': '楷書体（手書き風）', 
+      'font-brush': '毛筆・行書調（筆文字）' 
+    };
+
+    function applyVisualSettings() {
+      fontTrigger.textContent = FONT_LABELS[currentFontValue] || '明朝体（端正）';
+      printSheet.className = `sheet-inner ${currentFontValue} ${usuzumiCheck.checked ? 'is-usuzumi' : ''}`;
+      // 弔事の表書き、または薄墨指定時は弔事用の水引を表示
+      const isBuddhist = BUDDHIST_TITLES.includes(topInput.value) || usuzumiCheck.checked;
+      wmCelebration.style.display = isBuddhist ? 'none' : 'block';
+      wmBuddhist.style.display = isBuddhist ? 'block' : 'none';
+      mizuhikiSvg.style.display = watermarkCheck.checked ? 'block' : 'none';
+    }
+
+    function updatePresetChipUI() {
+      chipP1.textContent = '小:' + presets[0]; 
+      chipP2.textContent = '中:' + presets[1]; 
+      chipP3.textContent = '大:' + presets[2];
+      
+      const curVal = parseFloat(boxWidth.value);
+      chipOff.classList.toggle('active-preset', curVal === 0);
+      chipP1.classList.toggle('active-preset', curVal === presets[0]);
+      chipP2.classList.toggle('active-preset', curVal === presets[1]);
+      chipP3.classList.toggle('active-preset', curVal === presets[2]);
+    }
+
+    function updateBoxGuide() {
+      const wVal = parseFloat(boxWidth.value);
+      if (wVal <= 0) { 
+        boxGuide.style.display = 'none'; 
+        boxWidthVal.textContent = 'OFF'; 
+      } else {
+        boxGuide.style.display = 'block'; 
+        boxWidthVal.textContent = wVal + 'mm';
+        boxGuide.style.left = '50%'; 
+        boxGuide.style.width = ((wVal / currentPaperWidthMm) * 100) + '%';
+      }
+      updatePresetChipUI();
+    }
+
+    function updateMarginGuide() {
+      if (marginGuideCheck.checked && (safetyMarginTB > 0 || safetyMarginLR > 0)) {
+        const topPercent = (safetyMarginTB / currentPaperHeightMm) * 100;
+        const leftPercent = (safetyMarginLR / currentPaperWidthMm) * 100;
+        marginGuide.style.top = topPercent + '%'; 
+        marginGuide.style.bottom = topPercent + '%';
+        marginGuide.style.left = leftPercent + '%'; 
+        marginGuide.style.right = leftPercent + '%';
+        marginGuide.style.display = 'block';
+      } else { 
+        marginGuide.style.display = 'none'; 
+      }
+    }
+
+    function parseRubyText(text) {
+      const regex = /([^\s()（）]+)[\(（]([^\s()（）]+)[\)）]/g;
+      let lastIndex = 0, match;
+      let frag = document.createDocumentFragment();
+      
+      while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          frag.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+        }
+        const ruby = document.createElement('ruby');
+        const rt = document.createElement('rt');
+        ruby.appendChild(document.createTextNode(match[1])); 
+        rt.textContent = match[2]; 
+        ruby.appendChild(rt); 
+        frag.appendChild(ruby);
+        lastIndex = regex.lastIndex;
+      }
+      if (lastIndex < text.length) {
+        frag.appendChild(document.createTextNode(text.substring(lastIndex)));
+      }
+      return frag;
+    }
+
+    function renderLine2Text() {
+      const val = b2Input.value === '' ? DEFAULT_B2 : b2Input.value;
+      line2Text.innerHTML = '';
+      if (val.trim() === '') return;
+      
+      val.split('\n').forEach(text => {
+        const col = document.createElement('div'); 
+        col.className = 'name-col'; 
+        col.appendChild(parseRubyText(text)); 
+        line2Text.appendChild(col);
+      });
+      
+      if (bottomAlignBottomCheck.checked) {
+        line2Text.classList.add('align-bottom');
+      } else {
+        line2Text.classList.remove('align-bottom');
+      }
+    }
+
+    const MANNER_TIPS = {
+      '御祝': '💡 <strong>御祝</strong>: 出産・入学・長寿・新築など、一般的なお祝い事に幅広く用います。',
+      '寿': '💡 <strong>寿</strong>: 主に結婚祝いや引出物に用います。',
+      '内祝': '💡 <strong>内祝</strong>: お祝いのお返しや、身内の慶事のおすそ分けに用います。',
+      '御礼': '💡 <strong>御礼</strong>: 日頃のお礼や、心づけ・謝礼全般に用います。',
+      'お年賀': '💡 <strong>お年賀</strong>: 新年のご挨拶として、1月1日〜松の内に用います。',
+//      'お山祝い': '💡 <strong>お山祝い</strong>: 成田山新勝寺へのご祈願などで用いる地元ならではの表書きです。',
+      '粗品': '💡 <strong>粗品</strong>: ご挨拶回りや記念品など、控えめな贈り物に用います。',
+      '御中元': '💡 <strong>御中元</strong>: 夏の贈り物です（関東: 7月初旬〜中旬）。',
+      '御歳暮': '💡 <strong>御歳暮</strong>: 年末の贈り物です。',
+      '御仏前': '💡 <strong>御仏前</strong>: 四十九日以降の法要・お盆・お彼岸に用います。',
+      '御霊前': '💡 <strong>御霊前</strong>: 通夜・葬儀〜四十九日前に用います。',
+      '志': '💡 <strong>志</strong>: 香典返しや法要の引き出物に広く用いられます。',
+      '粗供養': '💡 <strong>粗供養</strong>: 法要で参列者へお持ち帰りいただく引き出物に用います。'
+    };
+
+    function updateMannerTip(val) {
+      if (MANNER_TIPS[val]) { 
+        mannerTip.innerHTML = MANNER_TIPS[val]; 
+        mannerTip.style.display = 'block'; 
+      } else { 
+        mannerTip.style.display = 'none'; 
+      }
+    }
+
+    function loadAndSave(isSave) {
+      if (isSave) {
+        localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+        
+        localStorage.setItem(MARGIN_STORAGE_KEY, JSON.stringify({
+          tb: safetyMarginTB, 
+          lr: safetyMarginLR,
+          offsetX: savedOffsetX,
+          isPortrait: savedIsPortrait
+        }));
+        
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          paper: currentPaperValue, 
+          font: currentFontValue, 
+          watermark: watermarkCheck.checked, 
+          usuzumi: usuzumiCheck.checked, 
+          alignBottom: bottomAlignBottomCheck.checked, 
+          marginGuide: marginGuideCheck.checked,
+          topText: topInput.value, 
+          topSize: topSize.value, 
+          topPos: topPos.value, 
+          b1Text: b1Input.value, 
+          b1Size: b1Size.value, 
+          b1Offset: b1Offset.value, 
+          b2Text: b2Input.value, 
+          b2Size: b2Size.value, 
+          bottomPos: bottomPos.value,
+          boxWidth: boxWidth.value, 
+          lsTop: lsTop.value, 
+          lsB1: lsB1.value, 
+          lsB2: lsB2.value, 
+          isDrawerOpen: advancedDrawer.classList.contains('is-open')
+        }));
+      } else {
+        try { 
+          const p = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY)); 
+          if(Array.isArray(p)) presets = p; 
+        } catch(e) {}
+        try { 
+          const m = JSON.parse(localStorage.getItem(MARGIN_STORAGE_KEY)); 
+          if (m) { 
+            safetyMarginTB = m.tb !== undefined ? m.tb : 5.0; 
+            safetyMarginLR = m.lr !== undefined ? m.lr : 5.0; 
+            if (m.offsetX !== undefined) savedOffsetX = parseFloat(m.offsetX);
+            if (m.isPortrait !== undefined) savedIsPortrait = m.isPortrait;
+          } 
+        } catch(e) {}
+        try {
+          const d = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          if (!d) return;
+          if (d.paper) currentPaperValue = d.paper; 
+          if (d.font) currentFontValue = d.font;
+          if (d.watermark !== undefined) watermarkCheck.checked = d.watermark; 
+          if (d.usuzumi !== undefined) usuzumiCheck.checked = d.usuzumi;
+          if (d.alignBottom !== undefined) bottomAlignBottomCheck.checked = d.alignBottom; 
+          if (d.marginGuide !== undefined) marginGuideCheck.checked = d.marginGuide;
+          if (d.topText !== undefined) topInput.value = d.topText; 
+          if (d.topSize) topSize.value = d.topSize; 
+          if (d.topPos) topPos.value = d.topPos;
+          if (d.b1Text !== undefined) b1Input.value = d.b1Text; 
+          if (d.b1Size) b1Size.value = d.b1Size; 
+          if (d.b1Offset) b1Offset.value = d.b1Offset;
+          if (d.b2Text !== undefined) b2Input.value = d.b2Text; 
+          if (d.b2Size) b2Size.value = d.b2Size; 
+          if (d.bottomPos) bottomPos.value = d.bottomPos;
+          if (d.boxWidth !== undefined) boxWidth.value = d.boxWidth;
+          if (d.lsTop !== undefined) lsTop.value = d.lsTop; 
+          if (d.lsB1 !== undefined) lsB1.value = d.lsB1; 
+          if (d.lsB2 !== undefined) lsB2.value = d.lsB2;
+          if (d.isDrawerOpen) { 
+            advancedDrawer.classList.add('is-open'); 
+            advancedToggleBtn.textContent = '詳細設定 ▴'; 
+          }
+        } catch(e) {}
+      }
+    }
+    
+    const saveSettings = () => loadAndSave(true);
+
+    function syncAllUI() {
+      applyPaper(currentPaperValue); // includes updatePrintLayout
+      applyVisualSettings();
+      topText.textContent = topInput.value; 
+      updateMannerTip(topInput.value);
+      
+      const vLsTop = parseFloat(lsTop.value);
+      const vLsB1 = parseFloat(lsB1.value);
+      const vLsB2 = parseFloat(lsB2.value);
+      
+      topSizeVal.textContent = topSize.value == 18 ? '標準:18mm' : topSize.value + 'mm'; 
+      topPosVal.textContent = topPos.value == 18 ? '標準:18mm' : topPos.value + 'mm';
+      
+      line1Text.textContent = b1Input.value; 
+      line1Text.style.display = b1Input.value.trim() === '' ? 'none' : 'block';
+      b1SizeVal.textContent = b1Size.value == 11 ? '標準:11mm' : b1Size.value + 'mm'; 
+      b1OffsetVal.textContent = b1Offset.value == 0 ? '標準:0mm' : `+${b1Offset.value}mm`;
+      
+      renderLine2Text(); 
+      b2SizeVal.textContent = b2Size.value == 15 ? '標準:15mm' : b2Size.value + 'mm'; 
+      bottomPosVal.textContent = bottomPos.value == 115 ? '標準:115mm' : bottomPos.value + 'mm';
+      
+      lsTopVal.textContent = Math.abs(vLsTop - 0.15) < 0.005 ? '標準:0.15em' : `${vLsTop.toFixed(2)}em`; 
+      lsB1Val.textContent = Math.abs(vLsB1 - 0.15) < 0.005 ? '標準:0.15em' : `${vLsB1.toFixed(2)}em`; 
+      lsB2Val.textContent = Math.abs(vLsB2 - 0.15) < 0.005 ? '標準:0.15em' : `${vLsB2.toFixed(2)}em`;
+      
+      offsetX.value = savedOffsetX;
+      offsetXVal.textContent = savedOffsetX === 0 ? '標準:0mm' : (savedOffsetX > 0 ? `+${savedOffsetX}mm` : `${savedOffsetX}mm`);
+      
+      const root = document.documentElement.style;
+      root.setProperty('--top-size', topSize.value); 
+      root.setProperty('--top-pos', topPos.value);
+      root.setProperty('--b1-size', b1Size.value); 
+      root.setProperty('--b1-offset', b1Offset.value);
+      root.setProperty('--b2-size', b2Size.value); 
+      root.setProperty('--bottom-pos', bottomPos.value);
+      root.setProperty('--offset-x', savedOffsetX);
+      root.setProperty('--ls-top', vLsTop + 'em'); 
+      root.setProperty('--ls-b1', vLsB1 + 'em'); 
+      root.setProperty('--ls-b2', vLsB2 + 'em');
+      
+      [topSize, topPos, b1Size, b1Offset, b2Size, bottomPos, boxWidth, lsTop, lsB1, lsB2].forEach((s, i) => {
+        updateFill(s, [fillTopSize, fillTopPos, fillB1Size, fillB1Offset, fillB2Size, fillBottomPos, fillBoxWidth, fillLsTop, fillLsB1, fillLsB2][i]);
+      });
+      updateFill(offsetX, fillOffsetX);
+    }
+
+    loadAndSave(false); 
+    syncAllUI();
+
+    // UIイベントリスナー
+    advancedToggleBtn.addEventListener('click', () => {
+      const isOpen = advancedDrawer.classList.toggle('is-open'); 
+      advancedToggleBtn.textContent = isOpen ? '詳細設定 ▴' : '詳細設定 ▾'; 
+      saveSettings();
+    });
+
+    // ------------------------------------
+    // ダイアログ・印刷設定（余白＋左右ズレ＋回転）
+    // ------------------------------------
+    marginGuideCheck.addEventListener('change', () => { 
+      updateMarginGuide(); 
+      saveSettings(); 
+    });
+    
+    marginEditBtn.addEventListener('click', () => { 
+      portraitPrintField.checked = savedIsPortrait;
+      marginTopBottomField.value = safetyMarginTB; 
+      marginLeftRightField.value = safetyMarginLR; 
+      offsetX.value = savedOffsetX;
+      offsetXVal.textContent = savedOffsetX === 0 ? '標準:0mm' : (savedOffsetX > 0 ? `+${savedOffsetX}mm` : `${savedOffsetX}mm`);
+      document.documentElement.style.setProperty('--offset-x', savedOffsetX);
+      updateFill(offsetX, fillOffsetX);
+      marginInputDialog.showModal(); 
+    });
+    
+    offsetX.addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      offsetXVal.textContent = v === 0 ? '標準:0mm' : (v > 0 ? `+${v}mm` : `${v}mm`);
+      document.documentElement.style.setProperty('--offset-x', v);
+      updateFill(offsetX, fillOffsetX);
+    });
+
+    wrapOffsetX.addEventListener('dblclick', () => {
+      offsetX.value = 0;
+      offsetXVal.textContent = '標準:0mm';
+      document.documentElement.style.setProperty('--offset-x', 0);
+      updateFill(offsetX, fillOffsetX);
+    });
+    
+    marginInputCancel.addEventListener('click', () => {
+      document.documentElement.style.setProperty('--offset-x', savedOffsetX);
+      updateFill(offsetX, fillOffsetX);
+      marginInputDialog.close();
+    });
+    
+    marginInputDialog.addEventListener('click', (e) => { 
+      if (e.target === marginInputDialog) {
+        document.documentElement.style.setProperty('--offset-x', savedOffsetX);
+        updateFill(offsetX, fillOffsetX);
+        marginInputDialog.close(); 
+      }
+    });
+    
+    marginInputNext.addEventListener('click', () => {
+      let vTB = parseFloat(marginTopBottomField.value);
+      let vLR = parseFloat(marginLeftRightField.value);
+      let vOffX = parseFloat(offsetX.value);
+      let vPortrait = portraitPrintField.checked;
+      
+      if (isNaN(vTB) || vTB < 0) vTB = 0; if (vTB > 30) vTB = 30;
+      if (isNaN(vLR) || vLR < 0) vLR = 0; if (vLR > 30) vLR = 30;
+      
+      pendingMarginTB = vTB; 
+      pendingMarginLR = vLR; 
+      pendingOffsetX = vOffX;
+      pendingIsPortrait = vPortrait;
+      
+      marginInputDialog.close();
+      
+      const rotText = vPortrait ? "縦向き(90度回転)" : "横のまま";
+      marginConfirmMsg.innerHTML = `印刷設定を更新しますか？<br><strong>用紙: ${rotText}</strong><br><strong>余白(上下: ${vTB}mm / 左右: ${vLR}mm)</strong><br><strong>左右補正: ${vOffX > 0 ? '+'+vOffX : vOffX}mm</strong>`; 
+      marginConfirmDialog.showModal();
+    });
+    
+    marginConfirmCancel.addEventListener('click', () => {
+      document.documentElement.style.setProperty('--offset-x', savedOffsetX);
+      updateFill(offsetX, fillOffsetX);
+      marginConfirmDialog.close();
+    });
+    
+    marginConfirmOk.addEventListener('click', () => { 
+      safetyMarginTB = pendingMarginTB; 
+      safetyMarginLR = pendingMarginLR; 
+      savedOffsetX = pendingOffsetX;
+      savedIsPortrait = pendingIsPortrait;
+      
+      document.documentElement.style.setProperty('--offset-x', savedOffsetX);
+      updatePrintLayout();
+      saveSettings(); 
+      updateMarginGuide(); 
+      marginConfirmDialog.close(); 
+    });
+    // ------------------------------------
+    
+    helpBtn.addEventListener('click', () => helpDialog.showModal()); 
+    helpCloseBtn.addEventListener('click', () => helpDialog.close());
+
+    let blockDropdownUntil = 0;
+    
+    function closeAllDropdowns() { 
+      paperDropdown.style.display = 'none'; 
+      fontDropdown.style.display = 'none'; 
+      suggestDropdown.style.display = 'none'; 
+      topInput.blur(); 
+    }
+    
+    function setupDropdown(triggerEl, dropdownEl, items, onSelect) {
+      triggerEl.addEventListener('click', (e) => { 
+        e.stopPropagation(); 
+        if (Date.now() < blockDropdownUntil) return; 
+        const isOpen = dropdownEl.style.display === 'block'; 
+        closeAllDropdowns(); 
+        if (!isOpen) dropdownEl.style.display = 'block'; 
+      });
+      
+      items.forEach(item => {
+        let touchY = 0;
+        let moved = false;
+        
+        item.addEventListener('touchstart', e => { 
+          moved = false; 
+          touchY = e.touches[0].clientY; 
+        }, {passive:true});
+        
+        item.addEventListener('touchmove', e => { 
+          if (Math.abs(e.touches[0].clientY - touchY) > 8) moved = true; 
+        }, {passive:true});
+        
+        const selectItem = () => { 
+          blockDropdownUntil = Date.now() + 350; 
+          onSelect(item.getAttribute('data-value')); 
+          closeAllDropdowns(); 
+          saveSettings(); 
+        };
+        
+        item.addEventListener('touchend', e => { 
+          if (!moved) { 
+            e.stopPropagation(); 
+            e.preventDefault(); 
+            selectItem(); 
+          } 
+        });
+        
+        item.addEventListener('click', e => { 
+          e.stopPropagation(); 
+          selectItem(); 
+        });
+      });
+    }
+    
+    setupDropdown(paperTrigger, paperDropdown, paperItems, val => applyPaper(val));
+    setupDropdown(fontTrigger, fontDropdown, fontItems, val => { 
+      currentFontValue = val; 
+      applyVisualSettings(); 
+    });
+    
+    ['focus', 'click'].forEach(evt => {
+      topInput.addEventListener(evt, e => { 
+        if (Date.now() < blockDropdownUntil) return; 
+        if (topInput.hasAttribute('readonly')) { 
+          closeAllDropdowns(); 
+          suggestDropdown.style.display = 'block'; 
+        } 
+      });
+    });
+    
+    editToggleBtn.addEventListener('click', e => {
+      e.stopPropagation(); 
+      const isR = topInput.hasAttribute('readonly'); 
+      closeAllDropdowns();
+      
+      if (isR) { 
+        topInput.removeAttribute('readonly'); 
+        topInput.focus(); 
+        editToggleBtn.classList.add('is-editing'); 
+        editToggleBtn.textContent = '✓'; 
+      } else { 
+        topInput.setAttribute('readonly', 'readonly'); 
+        editToggleBtn.classList.remove('is-editing'); 
+        editToggleBtn.textContent = '✏️'; 
+      }
+    });
+    
+    suggestItems.forEach(item => {
+      let tY = 0;
+      let m = false;
+      
+      item.addEventListener('touchstart', e => {
+        m = false;
+        tY = e.touches[0].clientY;
+      }, {passive:true});
+      
+      item.addEventListener('touchmove', e => {
+        if (Math.abs(e.touches[0].clientY - tY) > 8) m = true;
+      }, {passive:true});
+      
+      const c = () => {
+        blockDropdownUntil = Date.now() + 350; 
+        const val = item.getAttribute('data-value');
+        topInput.value = val; 
+        topText.textContent = val;
+        // 薄墨は通夜・葬儀（御霊前）のみ。四十九日以降の御仏前やお返し（志・粗供養）は濃墨が通例
+        usuzumiCheck.checked = val === '御霊前';
+        applyVisualSettings(); 
+        updateMannerTip(val); 
+        closeAllDropdowns(); 
+        saveSettings();
+      };
+      
+      item.addEventListener('touchend', e => {
+        if (!m) {
+          e.stopPropagation();
+          e.preventDefault();
+          c();
+        }
+      });
+      
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        c();
+      });
+    });
+    
+    document.addEventListener('click', e => { 
+      if (![paperBox, fontBox, topInput, suggestDropdown, editToggleBtn].some(el => el.contains(e.target))) {
+        closeAllDropdowns(); 
+      }
+    });
+
+    // スライダー制御
+    let activeDialogConfig = null;
+    const numInputTitle = document.getElementById('numInputTitle');
+    const numInputHint = document.getElementById('numInputHint');
+    const dialogNumberField = document.getElementById('dialogNumberField');
+    
+    function openNumberInputDialog(cfg) {
+      activeDialogConfig = cfg; 
+      numInputTitle.textContent = cfg.title; 
+      numInputHint.textContent = `範囲: ${cfg.min}${cfg.unit} 〜 ${cfg.max}${cfg.unit}`;
+      dialogNumberField.min = cfg.min; 
+      dialogNumberField.max = cfg.max; 
+      dialogNumberField.step = cfg.step; 
+      dialogNumberField.value = cfg.slider.value;
+      document.getElementById('numInputDialog').showModal(); 
+      setTimeout(() => { 
+        dialogNumberField.focus(); 
+        dialogNumberField.select(); 
+      }, 50);
+    }
+    
+    document.getElementById('numInputCancel').addEventListener('click', () => document.getElementById('numInputDialog').close());
+    
+    document.getElementById('numInputOk').addEventListener('click', () => {
+      if (!activeDialogConfig) return; 
+      let v = parseFloat(dialogNumberField.value);
+      
+      if (isNaN(v)) v = activeDialogConfig.def; 
+      if (v < activeDialogConfig.min) v = activeDialogConfig.min; 
+      if (v > activeDialogConfig.max) v = activeDialogConfig.max;
+      
+      activeDialogConfig.slider.value = v; 
+      activeDialogConfig.onUpdate(v); 
+      document.getElementById('numInputDialog').close();
+    });
+
+    const sliderConfigs = [
+      { wrap: wrapTopSize, slider: topSize, fill: fillTopSize, title: '表書き 文字サイズ', min: 12, max: 26, step: 1, def: 18, unit: 'mm',
+        onUpdate: v => { topSizeVal.textContent = v == 18 ? '標準:18mm' : v + 'mm'; document.documentElement.style.setProperty('--top-size', v); updateFill(topSize, fillTopSize); saveSettings(); } },
+      { wrap: wrapTopPos, slider: topPos, fill: fillTopPos, title: '表書き 上下位置', min: 6, max: 32, step: 1, def: 18, unit: 'mm',
+        onUpdate: v => { topPosVal.textContent = v == 18 ? '標準:18mm' : v + 'mm'; document.documentElement.style.setProperty('--top-pos', v); updateFill(topPos, fillTopPos); saveSettings(); } },
+      { wrap: wrapB1Size, slider: b1Size, fill: fillB1Size, title: '下段1行目 文字サイズ', min: 7, max: 18, step: 1, def: 11, unit: 'mm',
+        onUpdate: v => { b1SizeVal.textContent = v == 11 ? '標準:11mm' : v + 'mm'; document.documentElement.style.setProperty('--b1-size', v); updateFill(b1Size, fillB1Size); saveSettings(); } },
+      { wrap: wrapB1Offset, slider: b1Offset, fill: fillB1Offset, title: '下段1行目 位置上げ', min: 0, max: 40, step: 1, def: 0, unit: 'mm',
+        onUpdate: v => { b1OffsetVal.textContent = v == 0 ? '標準:0mm' : `+${v}mm`; document.documentElement.style.setProperty('--b1-offset', v); updateFill(b1Offset, fillB1Offset); saveSettings(); } },
+      { wrap: wrapB2Size, slider: b2Size, fill: fillB2Size, title: '下段2行目 文字サイズ', min: 8, max: 22, step: 1, def: 15, unit: 'mm',
+        onUpdate: v => { b2SizeVal.textContent = v == 15 ? '標準:15mm' : v + 'mm'; document.documentElement.style.setProperty('--b2-size', v); updateFill(b2Size, fillB2Size); saveSettings(); } },
+      { wrap: wrapBottomPos, slider: bottomPos, fill: fillBottomPos, title: '下段 開始高さ', min: 108, max: 160, step: 1, def: 115, unit: 'mm',
+        onUpdate: v => { bottomPosVal.textContent = v == 115 ? '標準:115mm' : v + 'mm'; document.documentElement.style.setProperty('--bottom-pos', v); updateFill(bottomPos, fillBottomPos); saveSettings(); } },
+      { wrap: wrapBoxWidth, slider: boxWidth, fill: fillBoxWidth, title: '箱の横幅ガイド', min: 0, max: 300, step: 1, def: 0, unit: 'mm',
+        onUpdate: v => { updateBoxGuide(); updateFill(boxWidth, fillBoxWidth); saveSettings(); } },
+      { wrap: wrapLsTop, slider: lsTop, fill: fillLsTop, title: '表書き 字間', min: 0, max: 0.5, step: 0.01, def: 0.15, unit: 'em',
+        onUpdate: v => { lsTopVal.textContent = Math.abs(v - 0.15)<0.005 ? '標準:0.15em' : `${v.toFixed(2)}em`; document.documentElement.style.setProperty('--ls-top', `${v}em`); updateFill(lsTop, fillLsTop); saveSettings(); } },
+      { wrap: wrapLsB1, slider: lsB1, fill: fillLsB1, title: '下段1行目 字間', min: 0, max: 0.4, step: 0.01, def: 0.15, unit: 'em',
+        onUpdate: v => { lsB1Val.textContent = Math.abs(v - 0.15)<0.005 ? '標準:0.15em' : `${v.toFixed(2)}em`; document.documentElement.style.setProperty('--ls-b1', `${v}em`); updateFill(lsB1, fillLsB1); saveSettings(); } },
+      { wrap: wrapLsB2, slider: lsB2, fill: fillLsB2, title: '下段2行目 字間', min: 0, max: 0.4, step: 0.01, def: 0.15, unit: 'em',
+        onUpdate: v => { lsB2Val.textContent = Math.abs(v - 0.15)<0.005 ? '標準:0.15em' : `${v.toFixed(2)}em`; document.documentElement.style.setProperty('--ls-b2', `${v}em`); updateFill(lsB2, fillLsB2); saveSettings(); } }
+    ];
+
+    function attachLongPress(cfg) {
+      let t = null;
+      let sx = 0;
+      let sy = 0;
+      let moved = false;
+      let iv = null;
+      let vScroll = false;
+      
+      const s = cfg.slider;
+      const w = cfg.wrap;
+      
+      w.addEventListener('touchstart', e => {
+        moved = false;
+        vScroll = false; 
+        iv = s.value; 
+        const touch = e.touches[0]; 
+        sx = touch.clientX; 
+        sy = touch.clientY;
+        
+        t = setTimeout(() => { 
+          if (!moved && !vScroll) { 
+            if (s.value !== iv) { 
+              s.value = iv; 
+              cfg.onUpdate(parseFloat(iv)); 
+            } 
+            try { navigator.vibrate(35); } catch(err) {} 
+            openNumberInputDialog(cfg); 
+          } 
+        }, 550);
+      }, {passive:true});
+      
+      w.addEventListener('touchmove', e => {
+        const dx = Math.abs(e.touches[0].clientX - sx);
+        const dy = Math.abs(e.touches[0].clientY - sy);
+        
+        if (dy > dx && dy > 5) { 
+          vScroll = true;
+          moved = true; 
+          clearTimeout(t); 
+          if (s.value !== iv) { 
+            s.value = iv; 
+            cfg.onUpdate(parseFloat(iv)); 
+          } 
+          return; 
+        }
+        if (dx > 8) { 
+          moved = true; 
+          clearTimeout(t); 
+        }
+      }, {passive:true});
+      
+      w.addEventListener('touchend', () => { 
+        clearTimeout(t); 
+        if (vScroll && s.value !== iv) { 
+          s.value = iv; 
+          cfg.onUpdate(parseFloat(iv)); 
+        } 
+      });
+      
+      let mt = null;
+      let mx = 0;
+      w.addEventListener('mousedown', e => {
+        iv = s.value;
+        mx = e.clientX;
+        mt = setTimeout(() => {
+          s.value = iv; 
+          cfg.onUpdate(parseFloat(iv)); 
+          openNumberInputDialog(cfg); 
+        }, 550); 
+      });
+      
+      // ドラッグ操作が始まったら長押し判定をキャンセル
+      w.addEventListener('mousemove', e => {
+        if (Math.abs(e.clientX - mx) > 4) clearTimeout(mt);
+      });
+      w.addEventListener('mouseup', () => clearTimeout(mt));
+      w.addEventListener('mouseleave', () => clearTimeout(mt));
+    }
+    
+    sliderConfigs.forEach(cfg => attachLongPress(cfg));
+
+    chipOff.addEventListener('click', () => { 
+      boxWidth.value = 0; 
+      updateBoxGuide(); 
+      updateFill(boxWidth, fillBoxWidth); 
+      saveSettings(); 
+    });
+    
+    presetConfirmCancel.addEventListener('click', () => presetConfirmDialog.close());
+    
+    presetConfirmOk.addEventListener('click', () => {
+      if (pendingPresetIndex !== null) { 
+        presets[pendingPresetIndex] = pendingPresetVal; 
+        updatePresetChipUI(); 
+        saveSettings(); 
+        presetChips[pendingPresetIndex].style.transform = 'scale(0.92)'; 
+        setTimeout(() => presetChips[pendingPresetIndex].style.transform = '', 150); 
+      }
+      presetConfirmDialog.close();
+    });
+    
+    presetChips.forEach(chip => {
+      const idx = parseInt(chip.getAttribute('data-idx')); 
+      let pt = null;
+      let lp = false;
+      
+      chip.addEventListener('click', () => { 
+        if (lp) { lp = false; return; } 
+        boxWidth.value = presets[idx]; 
+        updateBoxGuide(); 
+        updateFill(boxWidth, fillBoxWidth); 
+        saveSettings(); 
+      });
+      
+      const sp = () => { 
+        lp = false; 
+        pt = setTimeout(() => { 
+          lp = true; 
+          const v = parseFloat(boxWidth.value); 
+          if (v > 0) { 
+            try { navigator.vibrate(35); } catch(err) {} 
+            pendingPresetIndex = idx; 
+            pendingPresetVal = v; 
+            presetConfirmMsg.innerHTML = `現在の箱幅（<strong>${v}mm</strong>）を「<strong>${presetNames[idx]}</strong>」に登録しますか？`; 
+            presetConfirmDialog.showModal(); 
+          } 
+        }, 750); 
+      };
+      
+      const cp = () => clearTimeout(pt);
+      
+      chip.addEventListener('touchstart', sp, {passive:true}); 
+      chip.addEventListener('touchend', cp); 
+      chip.addEventListener('mousedown', sp); 
+      chip.addEventListener('mouseup', cp); 
+      chip.addEventListener('mouseleave', cp);
+    });
+
+    resetBtn.addEventListener('click', () => resetDialog.showModal()); 
+    dialogCancel.addEventListener('click', () => resetDialog.close());
+    
+    dialogOk.addEventListener('click', () => {
+      resetDialog.close(); 
+      try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+      
+      currentPaperValue = 'a4'; 
+      currentFontValue = 'font-shippori'; 
+      watermarkCheck.checked = true; 
+      usuzumiCheck.checked = false; 
+      bottomAlignBottomCheck.checked = true; 
+      marginGuideCheck.checked = false;
+      
+      topInput.value = '御祝'; 
+      topInput.setAttribute('readonly', 'readonly'); 
+      editToggleBtn.classList.remove('is-editing'); 
+      editToggleBtn.textContent = '✏️';
+      
+      topSize.value = 18; 
+      topPos.value = 18; 
+      b1Input.value = ''; 
+      b1Size.value = 11; 
+      b1Offset.value = 0; 
+      b2Input.value = ''; 
+      b2Size.value = 15; 
+      bottomPos.value = 115;
+      
+      boxWidth.value = 0; 
+      lsTop.value = 0.15; 
+      lsB1.value = 0.15; 
+      lsB2.value = 0.15;
+      
+      syncAllUI();
+    });
+
+    [watermarkCheck, usuzumiCheck].forEach(el => {
+      el.addEventListener('change', () => { 
+        applyVisualSettings(); 
+        saveSettings(); 
+      });
+    });
+    
+    bottomAlignBottomCheck.addEventListener('change', () => { 
+      renderLine2Text(); 
+      saveSettings(); 
+    });
+    
+    topInput.addEventListener('input', () => {
+      topText.textContent = topInput.value;
+      updateMannerTip(topInput.value);
+      applyVisualSettings();
+      saveSettings(); 
+    });
+    
+    b1Input.addEventListener('input', () => { 
+      line1Text.textContent = b1Input.value; 
+      line1Text.style.display = b1Input.value.trim() === '' ? 'none' : 'block'; 
+      saveSettings(); 
+    });
+    
+    b2Input.addEventListener('input', () => { 
+      renderLine2Text(); 
+      saveSettings(); 
+    });
+
+    sliderConfigs.forEach(cfg => {
+      const s = cfg.slider;
+      s.addEventListener('input', e => cfg.onUpdate(parseFloat(e.target.value)));
+      
+      let lt = 0;
+      s.parentElement.addEventListener('touchend', e => { 
+        const ct = Date.now(); 
+        if (ct - lt < 320 && ct - lt > 0) { 
+          e.preventDefault(); 
+          s.value = cfg.def; 
+          cfg.onUpdate(cfg.def); 
+        } 
+        lt = ct; 
+      });
+      
+      s.parentElement.addEventListener('dblclick', () => { 
+        s.value = cfg.def; 
+        cfg.onUpdate(cfg.def); 
+      });
+    });
+  </script>
+</body>
+</html>
