@@ -228,6 +228,7 @@
     .badge-thanks    { background: #ecfdf5; color: #047857; }
     .badge-buddhist  { background: #f1f5f9; color: #475569; }
 
+    .storage-warning { display: none; margin-bottom: 8px; padding: 6px 9px; background: #fef3c7; border-left: 3px solid #d97706; border-radius: 4px; font-size: 11px; line-height: 1.45; color: #78350f; }
     .manner-tip { display: none; margin-top: 5px; padding: 5px 9px; background: #f1f5f9; border-left: 3px solid #64748b; border-radius: 4px; font-size: 11px; line-height: 1.4; color: #334155; }
 
     /* スライダー */
@@ -390,6 +391,7 @@
   <!-- 操作パネル -->
   <div class="controls-container">
     <div class="controls">
+      <div id="storageWarning" class="storage-warning">⚠️ この環境では設定を保存できません。印刷はできますが、ページを閉じると入力内容や設定は初期値に戻ります。</div>
       <div style="display: flex; gap: 8px; align-items: flex-end;">
         <div style="flex: 1.15;">
           <label class="field-label" style="margin-top: 0;">用紙</label>
@@ -1032,8 +1034,24 @@
       }
     }
 
+    // 設定を保存できない環境（Cookie全ブロック・容量不足など）では注意を表示し、操作は続行する
+    const storageWarning = document.getElementById('storageWarning');
+    function showStorageWarning() {
+      storageWarning.style.display = 'block';
+    }
+    function checkStorage() {
+      try {
+        const k = '__noshi_storage_test__';
+        localStorage.setItem(k, '1');
+        localStorage.removeItem(k);
+      } catch (e) {
+        showStorageWarning();
+      }
+    }
+
     function loadAndSave(isSave) {
       if (isSave) {
+        try {
         localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
         
         localStorage.setItem(MARGIN_STORAGE_KEY, JSON.stringify({
@@ -1065,6 +1083,9 @@
           lsB2: lsB2.value, 
           isDrawerOpen: advancedDrawer.classList.contains('is-open')
         }));
+        } catch (e) {
+          showStorageWarning();
+        }
       } else {
         try { 
           const p = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY)); 
@@ -1158,7 +1179,8 @@
       updateFill(offsetX, fillOffsetX);
     }
 
-    loadAndSave(false); 
+    checkStorage();
+    loadAndSave(false);
     syncAllUI();
 
     // UIイベントリスナー
